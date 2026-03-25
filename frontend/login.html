@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline';">
+  <title>LAV</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-body">
+
+  <!-- Custom title bar (Tauri frameless window) -->
+  <div class="title-bar" id="title-bar" data-tauri-drag-region>
+    <span class="title-bar-title">LAV</span>
+    <div class="title-bar-controls">
+      <button id="tb-minimize" title="Minimize">
+        <svg width="12" height="2" viewBox="0 0 12 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="0" y1="1" x2="12" y2="1"/></svg>
+      </button>
+      <button id="tb-close" title="Close" class="close-btn">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="10" y2="10"/><line x1="10" y1="1" x2="1" y2="10"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="login-container">
+
+    <div class="login-logo">
+      <div class="lav-logo">
+        <svg width="200" height="76" viewBox="0 0 200 76" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="lg-blue" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#5bc8f5"/>
+              <stop offset="100%" stop-color="#0369a1"/>
+            </linearGradient>
+            <linearGradient id="lg-red" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#f87171"/>
+              <stop offset="100%" stop-color="#991b1b"/>
+            </linearGradient>
+            <filter id="glow-b" x="-25%" y="-25%" width="150%" height="150%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="glow-r" x="-25%" y="-25%" width="150%" height="150%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <!-- L — blue -->
+          <text x="6" y="62" font-family="'Segoe UI Black','Arial Black','Impact',sans-serif"
+                font-weight="900" font-size="64" fill="url(#lg-blue)" filter="url(#glow-b)">L</text>
+          <!-- A — gold -->
+          <text x="68" y="62" font-family="'Segoe UI Black','Arial Black','Impact',sans-serif"
+                font-weight="900" font-size="64" fill="#c89b3c">A</text>
+          <!-- V — red -->
+          <text x="134" y="62" font-family="'Segoe UI Black','Arial Black','Impact',sans-serif"
+                font-weight="900" font-size="64" fill="url(#lg-red)" filter="url(#glow-r)">V</text>
+          <!-- Decorative underlines -->
+          <rect x="6"   y="67" width="56" height="2" fill="#0369a1" opacity="0.7" rx="1"/>
+          <rect x="68"  y="67" width="56" height="2" fill="#c89b3c" opacity="0.7" rx="1"/>
+          <rect x="134" y="67" width="58" height="2" fill="#991b1b" opacity="0.7" rx="1"/>
+        </svg>
+      </div>
+      <p class="login-tagline">Account Vault</p>
+    </div>
+
+    <!-- First-time setup -->
+    <div id="setup-section" class="auth-box hidden">
+      <p class="auth-subtitle">Create a PIN to protect your vault.</p>
+      <div class="form-group">
+        <label for="setup-password">PIN</label>
+        <div class="input-with-toggle">
+          <input type="password" id="setup-password" placeholder="Choose a PIN (min 6 characters)" autocomplete="new-password">
+          <button class="toggle-btn" data-target="setup-password"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="setup-confirm">Confirm PIN</label>
+        <div class="input-with-toggle">
+          <input type="password" id="setup-confirm" placeholder="Repeat your PIN" autocomplete="new-password">
+          <button class="toggle-btn" data-target="setup-confirm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+      </div>
+      <div class="password-hint">
+        <span id="pw-strength"></span>
+      </div>
+      <div class="pin-warning">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Your PIN will be the only way to access your vault. If you forget it, you will no longer be able to access your accounts.</span>
+      </div>
+      <button class="btn-primary btn-full" id="setup-btn">Create Vault</button>
+    </div>
+
+    <!-- Unlock existing vault -->
+    <div id="unlock-section" class="auth-box hidden">
+      <p class="auth-subtitle">Enter your PIN to access your vault.</p>
+      <div class="form-group">
+        <label for="unlock-password">PIN</label>
+        <div class="input-with-toggle">
+          <input type="password" id="unlock-password" placeholder="Enter your PIN" autocomplete="current-password">
+          <button class="toggle-btn" data-target="unlock-password"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+      </div>
+      <button class="btn-primary btn-full" id="unlock-btn">Unlock Vault</button>
+      <button class="btn-link" id="forgot-pin-btn">Forgot your PIN?</button>
+
+      <!-- Inline reset confirmation -->
+      <div id="reset-confirm-box" class="reset-confirm-box hidden">
+        <p class="reset-confirm-text"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> This will permanently delete all stored accounts and cannot be undone.</p>
+        <div class="reset-confirm-actions">
+          <button class="btn-secondary" id="reset-cancel-btn">Cancel</button>
+          <button class="btn-danger" id="reset-confirm-btn">Reset Vault</button>
+        </div>
+      </div>
+    </div>
+
+    <p id="login-error" class="error-text hidden"></p>
+    <div id="login-loading" class="loading-text hidden">
+      <div class="spinner-small"></div>
+      <span>Unlocking vault...</span>
+    </div>
+
+  </div>
+
+  <script>
+    // ─── Tauri IPC ────────────────────────────────────────────────────────────
+    const { invoke } = window.__TAURI__.core;
+    const { getCurrentWindow } = window.__TAURI__.window;
+    const appWindow = getCurrentWindow();
+
+    document.getElementById('tb-minimize').addEventListener('click', () => appWindow.minimize());
+    document.getElementById('tb-close').addEventListener('click', () => appWindow.close());
+
+    // ─── Password toggle ──────────────────────────────────────────────────────
+    document.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById(btn.dataset.target);
+        input.type = input.type === 'password' ? 'text' : 'password';
+      });
+    });
+
+    // ─── PIN strength indicator ───────────────────────────────────────────────
+    document.getElementById('setup-password')?.addEventListener('input', (e) => {
+      const pw = e.target.value;
+      const el = document.getElementById('pw-strength');
+      if (!pw) { el.textContent = ''; return; }
+      if (pw.length < 6)  { el.textContent = 'PIN too short (min 6 characters)'; el.className = 'strength-weak'; }
+      else if (pw.length < 10) { el.textContent = 'PIN strength: Fair'; el.className = 'strength-fair'; }
+      else { el.textContent = 'PIN strength: Strong'; el.className = 'strength-strong'; }
+    });
+
+    // ─── Init ─────────────────────────────────────────────────────────────────
+    async function init() {
+      const exists = await invoke('vault_exists');
+      if (exists) {
+        document.getElementById('unlock-section').classList.remove('hidden');
+        document.getElementById('unlock-password').focus();
+      } else {
+        document.getElementById('setup-section').classList.remove('hidden');
+        document.getElementById('setup-password').focus();
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('login-error');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      document.getElementById('login-loading').classList.add('hidden');
+      setTimeout(() => el.classList.add('hidden'), 5000);
+    }
+
+    function setLoading(on) {
+      document.getElementById('login-loading').classList.toggle('hidden', !on);
+      const setup  = document.getElementById('setup-btn');
+      const unlock = document.getElementById('unlock-btn');
+      if (setup)  setup.disabled  = on;
+      if (unlock) unlock.disabled = on;
+    }
+
+    // Navigate to main window (resize + load index.html)
+    async function openMain() {
+      const { LogicalSize } = window.__TAURI__.dpi;
+      await appWindow.setSize(new LogicalSize(1150, 920));
+      await appWindow.setMinSize(new LogicalSize(800, 700));
+      await appWindow.setResizable(true);
+      window.location.href = 'index.html';
+    }
+
+    // ─── Create Vault ─────────────────────────────────────────────────────────
+    document.getElementById('setup-btn').addEventListener('click', async () => {
+      const pw      = document.getElementById('setup-password').value;
+      const confirm = document.getElementById('setup-confirm').value;
+      if (pw.length < 6) return showError('PIN must be at least 6 characters.');
+      if (pw !== confirm) return showError('PINs do not match.');
+      setLoading(true);
+      try {
+        await invoke('create_vault', { password: pw });
+        await openMain();
+      } catch (err) {
+        setLoading(false);
+        showError(err || 'Failed to create vault.');
+      }
+    });
+
+    // ─── Unlock ───────────────────────────────────────────────────────────────
+    document.getElementById('unlock-btn').addEventListener('click', async () => {
+      const pw = document.getElementById('unlock-password').value;
+      if (!pw) return showError('Enter your PIN.');
+      setLoading(true);
+      try {
+        await invoke('unlock', { password: pw });
+        await openMain();
+      } catch (err) {
+        setLoading(false);
+        showError(err || 'Incorrect PIN.');
+      }
+    });
+
+    // ─── Forgot PIN ───────────────────────────────────────────────────────────
+    document.getElementById('forgot-pin-btn').addEventListener('click', () => {
+      document.getElementById('reset-confirm-box').classList.remove('hidden');
+      document.getElementById('forgot-pin-btn').classList.add('hidden');
+      document.getElementById('unlock-btn').disabled = true;
+      document.getElementById('unlock-password').disabled = true;
+    });
+
+    document.getElementById('reset-cancel-btn').addEventListener('click', () => {
+      document.getElementById('reset-confirm-box').classList.add('hidden');
+      document.getElementById('forgot-pin-btn').classList.remove('hidden');
+      document.getElementById('unlock-btn').disabled = false;
+      document.getElementById('unlock-password').disabled = false;
+      document.getElementById('unlock-password').focus();
+    });
+
+    document.getElementById('reset-confirm-btn').addEventListener('click', async () => {
+      try {
+        await invoke('reset_vault');
+        document.getElementById('unlock-section').classList.add('hidden');
+        document.getElementById('setup-section').classList.remove('hidden');
+        document.getElementById('setup-password').focus();
+      } catch (err) {
+        document.getElementById('reset-confirm-box').classList.add('hidden');
+        document.getElementById('forgot-pin-btn').classList.remove('hidden');
+        document.getElementById('unlock-btn').disabled = false;
+        document.getElementById('unlock-password').disabled = false;
+        document.getElementById('unlock-password').focus();
+        showError(err || 'Failed to reset vault.');
+      }
+    });
+
+    document.getElementById('unlock-password')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('unlock-btn').click();
+    });
+    document.getElementById('setup-confirm')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('setup-btn').click();
+    });
+
+    init();
+  </script>
+</body>
+</html>

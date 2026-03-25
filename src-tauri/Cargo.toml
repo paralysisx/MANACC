@@ -1,0 +1,38 @@
+[package]
+name = "lol-account-manager"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri          = { version = "2", features = [] }
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+tokio          = { version = "1", features = ["full"] }
+uuid           = { version = "1", features = ["v4"] }
+hex            = "0.4"
+dirs           = "5"
+arboard        = "3"
+
+# Encryption: AES-256-GCM + PBKDF2-HMAC-SHA256
+ring           = "0.17"
+
+# HTTP + HTML scraping (no browser needed — op.gg uses Next.js SSR with __NEXT_DATA__)
+reqwest        = { version = "0.12", features = ["blocking", "rustls-tls", "cookies", "gzip", "deflate", "brotli"], default-features = false }
+
+# base64 for LCU API basic auth header
+base64         = "0.22"
+urlencoding    = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
+[profile.release]
+opt-level     = "z"
+lto           = true
+codegen-units = 1
+strip         = true
+panic         = "abort"

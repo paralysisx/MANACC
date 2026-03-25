@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <rect width="200" height="200" rx="44" fill="#111827"/>
+  <!-- U shape: two vertical bars + bottom curve -->
+  <rect x="42" y="44" width="34" height="90" rx="4" fill="white"/>
+  <rect x="124" y="44" width="34" height="90" rx="4" fill="white"/>
+  <rect x="42" y="116" width="116" height="34" rx="17" fill="white"/>
+  <!-- Blue center accent bar -->
+  <rect x="83" y="34" width="34" height="72" rx="5" fill="#3B82F6"/>
+</svg>

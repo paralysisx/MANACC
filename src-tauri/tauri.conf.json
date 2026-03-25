@@ -1,0 +1,37 @@
+{
+  "productName": "LAV",
+  "identifier": "com.lolmanager.app",
+  "version": "1.0.0",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "url": "login.html",
+        "title": "LAV",
+        "width": 420,
+        "height": 620,
+        "resizable": false,
+        "decorations": false,
+        "visible": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://opgg-static.akamaized.net https://ddragon.leagueoflegends.com; script-src 'self' 'unsafe-inline'"
+    }
+  }
+}
