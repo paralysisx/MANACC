@@ -9,6 +9,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
+    "createUpdaterArtifacts": "v1Compatible",
     "windows": {
       "nsis": {
         "installMode": "perMachine"
