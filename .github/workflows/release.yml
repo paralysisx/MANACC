@@ -22,13 +22,13 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Prepare signing key
+      - name: Write signing key file
         shell: bash
         run: |
-          TRIMMED_KEY=$(echo -n "$SIGNING_KEY" | tr -d '\n\r')
-          echo "TAURI_SIGNING_PRIVATE_KEY=$TRIMMED_KEY" >> $GITHUB_ENV
+          echo -n "$SIGNING_KEY" | tr -d '\n\r' | base64 -d > "$RUNNER_TEMP/private-key.key"
+          echo "Key file size: $(wc -c < "$RUNNER_TEMP/private-key.key") bytes"
+          echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP/private-key.key" >> $GITHUB_ENV
           echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> $GITHUB_ENV
-          echo "Key length: ${#TRIMMED_KEY}"
         env:
           SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
