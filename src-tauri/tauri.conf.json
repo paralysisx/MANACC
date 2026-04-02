@@ -1,7 +1,7 @@
 {
   "productName": "VaultX",
   "identifier": "com.lolmanager.app",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "build": {
     "frontendDist": "../frontend"
   },
