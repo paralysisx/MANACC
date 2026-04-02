@@ -4,3 +4,5 @@ pub mod clipboard;
 pub mod stats;
 pub mod launcher_cmd;
 pub mod shell;
+pub mod lobby;
+pub mod auto_accept;

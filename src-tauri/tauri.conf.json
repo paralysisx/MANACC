@@ -1,6 +1,6 @@
 {
-  "productName": "LAV",
-  "identifier": "com.lolmanager.app",
+  "productName": "VaultX",
+  "identifier": "com.vaultx.app",
   "version": "1.0.0",
   "build": {
     "frontendDist": "../frontend"
@@ -8,7 +8,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico"],
+    "icon": ["icons/icon.ico", "icons/icon.png"],
     "windows": {
       "nsis": {
         "installMode": "perMachine"
@@ -21,7 +21,7 @@
       {
         "label": "main",
         "url": "login.html",
-        "title": "LAV",
+        "title": "VaultX",
         "width": 420,
         "height": 620,
         "resizable": false,
@@ -31,7 +31,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://opgg-static.akamaized.net https://ddragon.leagueoflegends.com; script-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' https://ddragon.leagueoflegends.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://opgg-static.akamaized.net https://ddragon.leagueoflegends.com; script-src 'self' 'unsafe-inline'"
     }
   }
 }

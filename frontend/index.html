@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://ddragon.leagueoflegends.com https://opgg-static.akamaized.net data: blob:; script-src 'self' 'unsafe-inline';">
-  <title>LAV</title>
+    content="default-src 'self'; connect-src 'self' https://ddragon.leagueoflegends.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://ddragon.leagueoflegends.com https://opgg-static.akamaized.net data: blob:; script-src 'self' 'unsafe-inline';">
+  <title>VaultX</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
 
   <!-- Title Bar -->
   <div class="title-bar" data-tauri-drag-region>
-    <span class="title-bar-title">LAV</span>
+    <span class="title-bar-title">VaultX</span>
     <div class="title-bar-controls">
       <button id="settings-btn" title="Settings">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -36,6 +36,10 @@
   <div class="app-header">
     <h2>My Accounts</h2>
     <div class="header-right">
+      <button class="btn-secondary" id="lobby-viewer-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Lobby Reveal
+      </button>
       <button class="btn-secondary" id="refresh-all-btn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         Refresh All
@@ -138,11 +142,11 @@
   <div class="settings-body">
 
     <div class="settings-section">
-      <h4>Auto Accept</h4>
+      <h4>Queue</h4>
       <div class="toggle-row">
         <div>
           <div class="toggle-label">Auto-accept ready checks</div>
-          <div class="toggle-desc">Automatically accepts the match found popup when you launch an account.</div>
+          <div class="toggle-desc">Accepts queue pops while the app is open and this toggle is enabled.</div>
         </div>
         <label class="toggle-switch">
           <input type="checkbox" id="auto-accept-toggle">
@@ -174,6 +178,29 @@
 
 <!-- ─── Toast Container ───────────────────────────────────────────────── -->
 <div class="toast-container" id="toast-container"></div>
+
+<!-- ─── Lobby Viewer Modal ────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="lobby-modal">
+  <div class="modal lobby-modal">
+    <div class="modal-header">
+      <h3 id="lobby-modal-title">Lobby Viewer</h3>
+      <button class="modal-close" id="lobby-close-btn">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="lobby-meta" id="lobby-meta"></div>
+      <div class="lobby-list" id="lobby-list"></div>
+      <p id="lobby-error" class="error-text hidden"></p>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="lobby-open-opgg-btn">Open OP.GG</button>
+        <button class="btn-secondary" id="lobby-open-tracker-btn">Open Tracker</button>
+        <button class="btn-secondary" id="lobby-refresh-btn">Refresh</button>
+        <button class="btn-primary" id="lobby-done-btn">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
   // Set up Tauri window controls immediately (before app.js loads)

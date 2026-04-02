@@ -12,11 +12,19 @@ const cardsGrid       = document.getElementById('cards-grid');
 const emptyState      = document.getElementById('empty-state');
 const addBtn          = document.getElementById('add-account-btn');
 const refreshAllBtn   = document.getElementById('refresh-all-btn');
+const lobbyViewerBtn  = document.getElementById('lobby-viewer-btn');
 const accountModal    = document.getElementById('account-modal');
 const settingsPanel   = document.getElementById('settings-panel');
 const modalTitle      = document.getElementById('modal-title');
 const editIdInput     = document.getElementById('edit-id');
 const toastContainer  = document.getElementById('toast-container');
+const lobbyModal      = document.getElementById('lobby-modal');
+const lobbyModalTitle = document.getElementById('lobby-modal-title');
+const lobbyMeta       = document.getElementById('lobby-meta');
+const lobbyList       = document.getElementById('lobby-list');
+const lobbyError      = document.getElementById('lobby-error');
+
+let activeLobbyData = null;
 
 // ─── Tier helpers ─────────────────────────────────────────────────────────────
 const TIER_COLORS = {
@@ -92,8 +100,50 @@ function buildUggUrl(riotId, region) {
   return `https://u.gg/lol/profile/${s}/${encodeURIComponent(name)}/overview`;
 }
 
+function buildOpggMultiUrl(players, region) {
+  const r = (region || 'na').toLowerCase();
+  const names = players
+    .map(p => (p.gameName && p.tagLine) ? `${p.gameName}#${p.tagLine}` : null)
+    .filter(Boolean);
+  return `https://www.op.gg/multisearch/${r}?summoners=${encodeURIComponent(names.join(','))}`;
+}
+
+function buildTrackerMultiUrl(players, region) {
+  const r = (region || 'na').toLowerCase();
+  const names = players
+    .map(p => (p.gameName && p.tagLine) ? `${p.gameName}#${p.tagLine}` : null)
+    .filter(Boolean);
+  return `https://tracker.gg/lol/multisearch/${r}/${encodeURIComponent(names.join(','))}`;
+}
+
 // ─── Data Dragon champion icons ───────────────────────────────────────────────
-const DD_VERSION = '16.5.1';
+let DD_VERSION = '16.5.1';
+const DD_VERSION_CACHE_KEY = 'ddragonVersionCacheV1';
+const DD_VERSION_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function initDataDragonVersion() {
+  try {
+    const cachedRaw = localStorage.getItem(DD_VERSION_CACHE_KEY);
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw);
+      if (cached?.version && typeof cached.version === 'string' && (Date.now() - (cached.ts || 0)) < DD_VERSION_CACHE_MAX_AGE_MS) {
+        DD_VERSION = cached.version;
+        return;
+      }
+    }
+
+    const res = await fetch('https://ddragon.leagueoflegends.com/api/versions.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`versions.json HTTP ${res.status}`);
+    const versions = await res.json();
+    const latest = Array.isArray(versions) ? versions[0] : null;
+    if (latest && typeof latest === 'string') {
+      DD_VERSION = latest;
+      localStorage.setItem(DD_VERSION_CACHE_KEY, JSON.stringify({ version: latest, ts: Date.now() }));
+    }
+  } catch {
+    // best-effort: keep fallback version
+  }
+}
 
 // Champions whose Data Dragon key differs from the display name
 const DD_OVERRIDES = {
@@ -238,7 +288,7 @@ function buildCard(account) {
     </div>
 
     <div class="card-actions">
-      <button class="action-btn play js-launch" data-id="${esc(account.id)}" title="Launch League &amp; auto-login"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+      <button class="action-btn play js-launch" data-id="${esc(account.id)}" title="Open Riot Client"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
       <button class="action-btn refresh js-refresh" data-id="${esc(account.id)}" title="Refresh stats"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
       <button class="action-btn edit js-edit" data-id="${esc(account.id)}" title="Edit account"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
       <button class="action-btn delete js-delete" data-id="${esc(account.id)}" title="Delete account"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
@@ -286,7 +336,19 @@ async function renderAllCards() {
   }
 
   emptyState.classList.add('hidden');
-  allAccounts.forEach(acc => cardsGrid.appendChild(buildCard(acc)));
+  const frag = document.createDocumentFragment();
+  allAccounts.forEach((acc, i) => {
+    const card = buildCard(acc);
+    card.classList.add('is-entering');
+    card.style.animationDelay = `${Math.min(i * 35, 220)}ms`;
+    frag.appendChild(card);
+    // cleanup after animation
+    setTimeout(() => {
+      card.classList.remove('is-entering');
+      card.style.animationDelay = '';
+    }, 900);
+  });
+  cardsGrid.appendChild(frag);
 }
 
 // ─── Event Delegation (cards grid) ───────────────────────────────────────────
@@ -370,23 +432,18 @@ async function handleTogglePassword(id) {
   }
 }
 
-// ─── Launch League Client ─────────────────────────────────────────────────────
+// ─── Launch Riot Client ───────────────────────────────────────────────────────
 async function handleLaunchAccount(id) {
   const btn = cardsGrid.querySelector(`.js-launch[data-id="${id}"]`);
   const acc = allAccounts.find(a => a.id === id);
   if (!acc) return;
 
-  const autoAccept = localStorage.getItem('autoAccept') !== 'false';
-
   if (btn) btn.disabled = true;
-  showToast(`Launching League for "${acc.label}"… (~2–3 min)`, 'info', 180000);
+  showToast(`Opening Riot Client for "${acc.label}"…`, 'info', 15000);
 
   try {
-    await invoke('launch_account', { id, autoAccept });
-    const msg = autoAccept
-      ? 'Lobby created — auto-accepting ready checks!'
-      : 'Lobby created — ready check auto-accept is off.';
-    showToast(msg, 'success', 10000);
+    await invoke('launch_account', { id });
+    showToast('Riot Client launched.', 'success', 4000);
   } catch (err) {
     showToast(String(err) || 'Launch failed', 'error');
   } finally {
@@ -423,12 +480,146 @@ async function handleRefreshCard(id) {
     if (idx !== -1) allAccounts[idx].stats = stats;
     const newCard = buildCard(allAccounts[idx]);
     card?.replaceWith(newCard);
+    newCard.classList.add('is-refreshed');
+    setTimeout(() => newCard.classList.remove('is-refreshed'), 1100);
     showToast('Stats updated!', 'success');
   } catch (err) {
     if (loading) loading.classList.add('hidden');
     if (btn) btn.disabled = false;
     showToast(String(err) || 'Failed to fetch stats', 'error');
   }
+}
+
+// ─── Lobby Viewer ─────────────────────────────────────────────────────────────
+document.getElementById('lobby-close-btn')?.addEventListener('click', closeLobbyViewer);
+document.getElementById('lobby-done-btn')?.addEventListener('click', closeLobbyViewer);
+document.getElementById('lobby-refresh-btn')?.addEventListener('click', async () => {
+  await fetchLobby();
+});
+lobbyViewerBtn?.addEventListener('click', async () => {
+  await openLobbyViewer();
+});
+document.getElementById('lobby-open-opgg-btn')?.addEventListener('click', async () => {
+  await openLobbyMultiSite('opgg');
+});
+document.getElementById('lobby-open-tracker-btn')?.addEventListener('click', async () => {
+  await openLobbyMultiSite('tracker');
+});
+lobbyModal?.addEventListener('click', (e) => {
+  if (e.target === lobbyModal) closeLobbyViewer();
+});
+
+function closeLobbyViewer() {
+  lobbyModal.classList.add('hidden');
+  activeLobbyData = null;
+}
+
+function renderLobbyPlayers(players) {
+  if (!players || players.length === 0) {
+    lobbyList.innerHTML = '<div class="hint">No champion-select players found yet.</div>';
+    return;
+  }
+
+  const friendlyName = (p) => {
+    if (p.gameName && p.tagLine) return `${p.gameName}#${p.tagLine}`;
+    if (p.summonerName && p.summonerName !== 'Hidden Summoner') return p.summonerName;
+    return 'Hidden Summoner';
+  };
+
+  const secondary = (p) => {
+    if (p.gameName && p.tagLine) return `Riot ID: ${p.gameName}#${p.tagLine}`;
+    return 'Riot ID unavailable yet';
+  };
+
+  lobbyList.innerHTML = players.map(p => `
+    <div class="lobby-row">
+      <div>
+        <div class="lobby-name">${esc(friendlyName(p))}</div>
+        <div class="lobby-puuid">${esc(secondary(p))}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function fetchLobby() {
+  const refreshBtn = document.getElementById('lobby-refresh-btn');
+  if (refreshBtn) refreshBtn.disabled = true;
+  lobbyError.classList.add('hidden');
+  lobbyMeta.textContent = 'Loading lobby data...';
+  lobbyList.innerHTML = '<div class="hint"><span class="spinner-small"></span> Checking League client...</div>';
+
+  try {
+    const data = await invoke('get_lobby_view');
+    activeLobbyData = data;
+    lobbyMeta.textContent = `Phase: ${data.phase} • Region: ${data.region || 'NA'} • Players: ${data.players.length}`;
+    if (!data.inChampSelect) {
+      lobbyMeta.textContent += ' • Not in champ select';
+    }
+    renderLobbyPlayers(data.players || []);
+  } catch (err) {
+    activeLobbyData = null;
+    lobbyMeta.textContent = 'Lobby unavailable';
+    lobbyList.innerHTML = '';
+    lobbyError.textContent = String(err) || 'Failed to load lobby.';
+    lobbyError.classList.remove('hidden');
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+}
+
+async function openLobbyMultiSite(site) {
+  if (!activeLobbyData?.players?.length) {
+    showToast('No lobby players available for multi-search.', 'info');
+    return;
+  }
+  const eligible = activeLobbyData.players.filter(p => p.gameName && p.tagLine);
+  if (eligible.length === 0) {
+    showToast('Players are missing Riot IDs (gameName#tagLine).', 'error');
+    return;
+  }
+
+  const url = site === 'tracker'
+    ? buildTrackerMultiUrl(eligible, activeLobbyData.region || 'NA')
+    : buildOpggMultiUrl(eligible, activeLobbyData.region || 'NA');
+
+  try {
+    await invoke('open_external', { url });
+  } catch (err) {
+    showToast(String(err) || 'Failed to open browser.', 'error');
+  }
+}
+
+async function openLobbyViewer() {
+  lobbyModalTitle.textContent = 'Lobby Reveal';
+  lobbyModal.classList.remove('hidden');
+  await fetchLobby();
+}
+
+// ─── Auto-accept toggle ───────────────────────────────────────────────────────
+const autoAcceptToggle = document.getElementById('auto-accept-toggle');
+if (autoAcceptToggle) {
+  (async () => {
+    try {
+      const enabled = await invoke('get_auto_accept_status');
+      autoAcceptToggle.checked = !!enabled;
+    } catch {
+      autoAcceptToggle.checked = false;
+    }
+  })();
+
+  autoAcceptToggle.addEventListener('change', async () => {
+    autoAcceptToggle.disabled = true;
+    try {
+      const enabled = await invoke('set_auto_accept_enabled', { enabled: autoAcceptToggle.checked });
+      autoAcceptToggle.checked = !!enabled;
+      showToast(enabled ? 'Auto-accept enabled.' : 'Auto-accept disabled.', 'info');
+    } catch (err) {
+      autoAcceptToggle.checked = !autoAcceptToggle.checked;
+      showToast(String(err) || 'Failed to update auto-accept.', 'error');
+    } finally {
+      autoAcceptToggle.disabled = false;
+    }
+  });
 }
 
 // ─── Refresh All ──────────────────────────────────────────────────────────────
@@ -571,13 +762,6 @@ document.getElementById('settings-close-btn').addEventListener('click', closeSet
 document.getElementById('lock-btn').addEventListener('click', handleLock);
 document.getElementById('lock-vault-settings-btn').addEventListener('click', handleLock);
 
-// Auto-accept toggle — default ON
-const autoAcceptToggle = document.getElementById('auto-accept-toggle');
-autoAcceptToggle.checked = localStorage.getItem('autoAccept') !== 'false';
-autoAcceptToggle.addEventListener('change', () => {
-  localStorage.setItem('autoAccept', autoAcceptToggle.checked ? 'true' : 'false');
-});
-
 function openSettings()  { settingsPanel.classList.remove('hidden'); }
 function closeSettings() { settingsPanel.classList.add('hidden'); }
 
@@ -596,16 +780,30 @@ async function handleLock() {
 
 // ─── Toast Notifications ──────────────────────────────────────────────────────
 function showToast(message, type = 'info', duration = type === 'error' ? 7000 : 4000) {
+  // Keep the UI tidy: replace old info toasts, cap count.
+  if (type === 'info') {
+    toastContainer.querySelectorAll('.toast.info').forEach(t => t.remove());
+  }
+  const toasts = toastContainer.querySelectorAll('.toast');
+  if (toasts.length >= 3) {
+    toasts[0].remove();
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
   toastContainer.appendChild(toast);
+
+  // fade-out then remove
   setTimeout(() => {
+    toast.style.transition = 'opacity 0.28s';
     toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.3s';
     setTimeout(() => toast.remove(), 300);
   }, duration);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-renderAllCards();
+(async () => {
+  await initDataDragonVersion();
+  renderAllCards();
+})();

@@ -1,4 +1,4 @@
-# LAV — Tauri Build Instructions
+# VaultX — Tauri Build Instructions
 
 ## Prerequisites (one-time setup)
 
@@ -28,8 +28,8 @@ The first build takes 5–15 minutes (compiling Rust + all crates).
 Subsequent builds are much faster (incremental).
 
 **Output:**
-- `src-tauri\target\release\bundle\nsis\LAV_1.0.0_x64-setup.exe`  ← Installer to distribute
-- `src-tauri\target\release\lol-account-manager.exe`               ← Raw binary
+- `src-tauri\target\release\bundle\nsis\*_x64-setup.exe`  ← Installer to distribute
+- `src-tauri\target\release\*.exe`                        ← Raw binary
 
 ## Dev mode (with hot-reload of frontend)
 

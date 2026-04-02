@@ -23,7 +23,6 @@ ring           = "0.17"
 # HTTP + HTML scraping (no browser needed — op.gg uses Next.js SSR with __NEXT_DATA__)
 reqwest        = { version = "0.12", features = ["blocking", "rustls-tls", "cookies", "gzip", "deflate", "brotli"], default-features = false }
 
-# base64 for LCU API basic auth header
 base64         = "0.22"
 urlencoding    = "2"
 

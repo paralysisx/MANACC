@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self' 'unsafe-inline';">
-  <title>LAV</title>
+  <title>VaultX</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="login-body">
 
   <!-- Custom title bar (Tauri frameless window) -->
   <div class="title-bar" id="title-bar" data-tauri-drag-region>
-    <span class="title-bar-title">LAV</span>
+    <span class="title-bar-title">VaultX</span>
     <div class="title-bar-controls">
       <button id="tb-minimize" title="Minimize">
         <svg width="12" height="2" viewBox="0 0 12 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="0" y1="1" x2="12" y2="1"/></svg>
@@ -26,41 +26,9 @@
 
     <div class="login-logo">
       <div class="lav-logo">
-        <svg width="200" height="76" viewBox="0 0 200 76" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="lg-blue" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stop-color="#5bc8f5"/>
-              <stop offset="100%" stop-color="#0369a1"/>
-            </linearGradient>
-            <linearGradient id="lg-red" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stop-color="#f87171"/>
-              <stop offset="100%" stop-color="#991b1b"/>
-            </linearGradient>
-            <filter id="glow-b" x="-25%" y="-25%" width="150%" height="150%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-            <filter id="glow-r" x="-25%" y="-25%" width="150%" height="150%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
-          <!-- L — blue -->
-          <text x="6" y="62" font-family="'Segoe UI Black','Arial Black','Impact',sans-serif"
-                font-weight="900" font-size="64" fill="url(#lg-blue)" filter="url(#glow-b)">L</text>
-          <!-- A — gold -->
-          <text x="68" y="62" font-family="'Segoe UI Black','Arial Black','Impact',sans-serif"
-                font-weight="900" font-size="64" fill="#c89b3c">A</text>
-          <!-- V — red -->
-          <text x="134" y="62" font-family="'Segoe UI Black','Arial Black','Impact',sans-serif"
-                font-weight="900" font-size="64" fill="url(#lg-red)" filter="url(#glow-r)">V</text>
-          <!-- Decorative underlines -->
-          <rect x="6"   y="67" width="56" height="2" fill="#0369a1" opacity="0.7" rx="1"/>
-          <rect x="68"  y="67" width="56" height="2" fill="#c89b3c" opacity="0.7" rx="1"/>
-          <rect x="134" y="67" width="58" height="2" fill="#991b1b" opacity="0.7" rx="1"/>
-        </svg>
+        <img src="icons/VX_main_icon.png" alt="VaultX" class="vaultx-logo" draggable="false">
       </div>
-      <p class="login-tagline">Account Vault</p>
+      <p class="login-tagline">VaultX</p>
     </div>
 
     <!-- First-time setup -->

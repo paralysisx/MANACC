@@ -9,7 +9,7 @@
 /// - ciphertext: variable  (plaintext XOR'd with keystream)
 
 use ring::{
-    aead::{self, Aad, BoundKey, Nonce, NonceSequence, SealingKey, OpeningKey, UnboundKey, AES_256_GCM, NONCE_LEN},
+    aead::{Aad, BoundKey, Nonce, NonceSequence, SealingKey, OpeningKey, UnboundKey, AES_256_GCM, NONCE_LEN},
     error::Unspecified,
     pbkdf2,
     rand::{self, SecureRandom},
