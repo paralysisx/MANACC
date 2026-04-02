@@ -22,12 +22,23 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Verify signing key exists
+        run: |
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty! Add it in Settings > Secrets."
+            exit 1
+          fi
+          echo "Signing key is set (length: ${#TAURI_SIGNING_PRIVATE_KEY} chars)"
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: v__VERSION__
           releaseName: 'VaultX v__VERSION__'
