@@ -26,7 +26,6 @@ jobs:
         run: |
           $key = "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}".Trim()
           echo "TAURI_SIGNING_PRIVATE_KEY=$key" >> $env:GITHUB_ENV
-          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> $env:GITHUB_ENV
           echo "Signing key is set (length: $($key.Length) chars)"
         shell: pwsh
 
@@ -34,6 +33,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: v__VERSION__
           releaseName: 'VaultX v__VERSION__'
