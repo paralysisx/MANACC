@@ -27,7 +27,6 @@ const lobbyError      = document.getElementById('lobby-error');
 
 let activeLobbyData = null;
 let currentSortMode = localStorage.getItem('accountsSortMode') || 'highest';
-let latestUpdateDownloadUrl = '';
 
 // ─── Tier helpers ─────────────────────────────────────────────────────────────
 const TIER_COLORS = {
@@ -817,37 +816,31 @@ document.getElementById('lock-vault-settings-btn').addEventListener('click', han
 function openSettings()  { settingsPanel.classList.remove('hidden'); }
 function closeSettings() { settingsPanel.classList.add('hidden'); }
 
-// ─── Updates ───────────────────────────────────────────────────────────────────
-const checkUpdatesBtn = document.getElementById('check-updates-btn');
-const downloadUpdateBtn = document.getElementById('download-update-btn');
+// ─── Updates (tauri-plugin-updater) ──────────────────────────────────────────
+const checkUpdatesBtn    = document.getElementById('check-updates-btn');
+const installUpdateBtn   = document.getElementById('install-update-btn');
 const updateCurrentVersionEl = document.getElementById('update-current-version');
-const updateStatusTextEl = document.getElementById('update-status-text');
-const autoCheckUpdates = localStorage.getItem('autoCheckUpdates') !== 'false';
+const updateStatusTextEl     = document.getElementById('update-status-text');
+const updateProgressEl       = document.getElementById('update-progress');
+
+let pendingUpdate = null;
 
 async function runUpdateCheck(silent = false) {
   if (checkUpdatesBtn) checkUpdatesBtn.disabled = true;
-  if (!silent && updateStatusTextEl) updateStatusTextEl.textContent = 'Checking latest release...';
+  if (!silent && updateStatusTextEl) updateStatusTextEl.textContent = 'Checking for updates...';
   try {
-    const info = await invoke('check_for_updates');
-    if (updateCurrentVersionEl) {
-      updateCurrentVersionEl.textContent = `Current version: v${info.currentVersion}`;
-    }
-    if (info.updateAvailable) {
-      latestUpdateDownloadUrl = info.downloadUrl || info.releaseUrl || '';
-      if (downloadUpdateBtn) downloadUpdateBtn.classList.remove('hidden');
-      if (updateStatusTextEl) {
-        updateStatusTextEl.textContent = `Update available: v${info.latestVersion}.`;
-      }
-      if (!silent) showToast(`Update available: v${info.latestVersion}`, 'info', 7000);
+    const { check } = window.__TAURI__.updater;
+    const update = await check();
+    if (update) {
+      pendingUpdate = update;
+      if (updateStatusTextEl) updateStatusTextEl.textContent = `Update available: v${update.version}`;
+      if (installUpdateBtn)   installUpdateBtn.classList.remove('hidden');
+      if (!silent) showToast(`Update available: v${update.version}`, 'info', 7000);
     } else {
-      latestUpdateDownloadUrl = '';
-      if (downloadUpdateBtn) downloadUpdateBtn.classList.add('hidden');
-      if (updateStatusTextEl) {
-        updateStatusTextEl.textContent = info.statusMessage || 'You are using the latest version.';
-      }
-      if (!silent) {
-        showToast(info.statusMessage || 'You are on the latest version.', 'success');
-      }
+      pendingUpdate = null;
+      if (installUpdateBtn)   installUpdateBtn.classList.add('hidden');
+      if (updateStatusTextEl) updateStatusTextEl.textContent = 'You are using the latest version.';
+      if (!silent) showToast('You are on the latest version.', 'success');
     }
   } catch (err) {
     if (updateStatusTextEl) updateStatusTextEl.textContent = 'Failed to check for updates.';
@@ -858,16 +851,40 @@ async function runUpdateCheck(silent = false) {
 }
 
 checkUpdatesBtn?.addEventListener('click', () => runUpdateCheck(false));
-downloadUpdateBtn?.addEventListener('click', async () => {
-  if (!latestUpdateDownloadUrl) {
-    showToast('No update download URL available.', 'error');
-    return;
-  }
+
+installUpdateBtn?.addEventListener('click', async () => {
+  if (!pendingUpdate) return;
   try {
-    await invoke('open_external', { url: latestUpdateDownloadUrl });
-    showToast('Opened update download in your browser.', 'success');
+    if (installUpdateBtn)   installUpdateBtn.disabled = true;
+    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Downloading update...';
+    if (updateProgressEl)   updateProgressEl.classList.remove('hidden');
+
+    let downloaded = 0;
+    let total = 0;
+    await pendingUpdate.downloadAndInstall((event) => {
+      if (event.event === 'Started' && event.data.contentLength) {
+        total = event.data.contentLength;
+      } else if (event.event === 'Progress') {
+        downloaded += event.data.chunkLength;
+        if (total > 0 && updateProgressEl) {
+          const pct = Math.round((downloaded / total) * 100);
+          updateProgressEl.style.setProperty('--progress', `${pct}%`);
+          updateStatusTextEl.textContent = `Downloading... ${pct}%`;
+        }
+      } else if (event.event === 'Finished') {
+        if (updateStatusTextEl) updateStatusTextEl.textContent = 'Installing... The app will restart.';
+      }
+    });
+
+    // If we get here, the app should restart automatically via the plugin.
+    // Fallback message in case it doesn't:
+    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update installed. Please restart the app.';
   } catch (err) {
-    showToast(String(err) || 'Failed to open update URL', 'error');
+    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Update failed.';
+    showToast(String(err) || 'Update install failed', 'error');
+  } finally {
+    if (installUpdateBtn)  installUpdateBtn.disabled = false;
+    if (updateProgressEl)  updateProgressEl.classList.add('hidden');
   }
 });
 

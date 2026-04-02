@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; connect-src 'self' https://ddragon.leagueoflegends.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://ddragon.leagueoflegends.com https://opgg-static.akamaized.net data: blob:; script-src 'self' 'unsafe-inline';">
+    content="default-src 'self'; connect-src 'self' https://ddragon.leagueoflegends.com https://github.com https://objects.githubusercontent.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://ddragon.leagueoflegends.com https://opgg-static.akamaized.net data: blob:; script-src 'self' 'unsafe-inline';">
   <title>VaultX</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -165,11 +165,12 @@
 
     <div class="settings-section">
       <h4>Updates</h4>
-      <p class="hint" id="update-current-version">Current version: v1.0.0</p>
+      <p class="hint" id="update-current-version">Current version: v1.0.2</p>
       <p class="hint" id="update-status-text">Click "Check for Updates" to look for newer releases.</p>
+      <div class="update-progress hidden" id="update-progress"></div>
       <div class="modal-actions" style="margin-top:8px; padding-top:12px;">
         <button class="btn-secondary" id="check-updates-btn">Check for Updates</button>
-        <button class="btn-primary hidden" id="download-update-btn">Download Update</button>
+        <button class="btn-primary hidden" id="install-update-btn">Install Update</button>
       </div>
     </div>
 

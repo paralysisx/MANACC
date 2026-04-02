@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Mutex::new(session::SessionState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::auth::vault_exists,
@@ -32,7 +33,6 @@ fn main() {
             commands::lobby::get_lobby_view,
             commands::auto_accept::set_auto_accept_enabled,
             commands::auto_accept::get_auto_accept_status,
-            commands::update::check_for_updates,
             commands::shell::open_external,
         ])
         .run(tauri::generate_context!())

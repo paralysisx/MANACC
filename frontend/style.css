@@ -192,6 +192,24 @@ body {
 .btn-primary:active { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: none; }
 
+.update-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin-top: 8px;
+  overflow: hidden;
+  --progress: 0%;
+}
+.update-progress::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: var(--progress);
+  background: linear-gradient(90deg, var(--gold), #e8c860);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+
 .btn-secondary {
   background: transparent;
   color: var(--text-muted);

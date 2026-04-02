@@ -1,18 +1,26 @@
 {
   "productName": "VaultX",
-  "identifier": "com.vaultx.app",
-  "version": "1.0.0",
+  "identifier": "com.lolmanager.app",
+  "version": "1.0.2",
   "build": {
     "frontendDist": "../frontend"
   },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "icon": ["icons/icon.ico"],
     "windows": {
       "nsis": {
         "installMode": "perMachine"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/paralysisx/MANACC/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyMkI2QTcwREI2Rjc5QkQKUldTOWVXL2JjR29yUXIyU2NYZkw1L2wvRC9MNmZRQnVKUDJLQUp6T0VTT0V1SlNCOExtSFk3My8K"
     }
   },
   "app": {
@@ -31,7 +39,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://ddragon.leagueoflegends.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://opgg-static.akamaized.net https://ddragon.leagueoflegends.com; script-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://opgg-static.akamaized.net https://ddragon.leagueoflegends.com; script-src 'self' 'unsafe-inline'"
     }
   }
 }
