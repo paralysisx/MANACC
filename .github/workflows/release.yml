@@ -22,24 +22,15 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Write signing key file
-        shell: bash
-        run: |
-          echo -n "$SIGNING_KEY" | tr -d '\n\r' | base64 -d > "$RUNNER_TEMP/private-key.key"
-          echo "Key file size: $(wc -c < "$RUNNER_TEMP/private-key.key") bytes"
-          echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP/private-key.key" >> $GITHUB_ENV
-          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> $GITHUB_ENV
-        env:
-          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: v__VERSION__
           releaseName: 'VaultX v__VERSION__'
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: false
           prerelease: false
-          updaterJsonPreferNsis: true
+          includeUpdaterJson: true
