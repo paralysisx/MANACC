@@ -32,6 +32,7 @@ fn main() {
             commands::lobby::get_lobby_view,
             commands::auto_accept::set_auto_accept_enabled,
             commands::auto_accept::get_auto_accept_status,
+            commands::update::check_for_updates,
             commands::shell::open_external,
         ])
         .run(tauri::generate_context!())

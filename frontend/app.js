@@ -13,6 +13,7 @@ const emptyState      = document.getElementById('empty-state');
 const addBtn          = document.getElementById('add-account-btn');
 const refreshAllBtn   = document.getElementById('refresh-all-btn');
 const lobbyViewerBtn  = document.getElementById('lobby-viewer-btn');
+const sortSelect      = document.getElementById('sort-select');
 const accountModal    = document.getElementById('account-modal');
 const settingsPanel   = document.getElementById('settings-panel');
 const modalTitle      = document.getElementById('modal-title');
@@ -25,6 +26,8 @@ const lobbyList       = document.getElementById('lobby-list');
 const lobbyError      = document.getElementById('lobby-error');
 
 let activeLobbyData = null;
+let currentSortMode = localStorage.getItem('accountsSortMode') || 'highest';
+let latestUpdateDownloadUrl = '';
 
 // ─── Tier helpers ─────────────────────────────────────────────────────────────
 const TIER_COLORS = {
@@ -36,6 +39,28 @@ const TIER_COLORS = {
 
 function tierClass(tier) {
   return `tier-${(tier || 'UNRANKED').toUpperCase()}`;
+}
+
+const TIER_ORDER = {
+  CHALLENGER: 9, GRANDMASTER: 8, MASTER: 7, DIAMOND: 6, EMERALD: 5,
+  PLATINUM: 4, GOLD: 3, SILVER: 2, BRONZE: 1, IRON: 0, UNRANKED: -1
+};
+
+const DIVISION_ORDER = { I: 4, II: 3, III: 2, IV: 1 };
+
+function rankScoreFromStats(stats) {
+  const solo = stats?.solo || { tier: 'UNRANKED' };
+  const flex = stats?.flex || { tier: 'UNRANKED' };
+  const candidates = [solo, flex];
+  const scoreFor = (rank) => {
+    const tier = (rank?.tier || 'UNRANKED').toUpperCase();
+    const tierScore = TIER_ORDER[tier] ?? -1;
+    if (tierScore < 0) return -1;
+    const div = DIVISION_ORDER[(rank?.division || '').toUpperCase()] ?? 0;
+    const lp = Number(rank?.lp || 0);
+    return tierScore * 1000 + div * 100 + lp;
+  };
+  return Math.max(...candidates.map(scoreFor));
 }
 
 function capitalise(str) {
@@ -328,7 +353,8 @@ async function renderAllCards() {
     return showToast(String(err), 'error');
   }
 
-  cardsGrid.querySelectorAll('.account-card').forEach(c => c.remove());
+  // Clear all dynamic rows (cards + region separators) but keep empty state node.
+  cardsGrid.querySelectorAll(':scope > :not(#empty-state)').forEach(n => n.remove());
 
   if (allAccounts.length === 0) {
     emptyState.classList.remove('hidden');
@@ -336,13 +362,30 @@ async function renderAllCards() {
   }
 
   emptyState.classList.add('hidden');
+  const sortedAccounts = [...allAccounts];
+  if (currentSortMode === 'highest') {
+    sortedAccounts.sort((a, b) => rankScoreFromStats(b.stats) - rankScoreFromStats(a.stats));
+  } else if (currentSortMode === 'lowest') {
+    sortedAccounts.sort((a, b) => rankScoreFromStats(a.stats) - rankScoreFromStats(b.stats));
+  } else if (currentSortMode === 'region') {
+    sortedAccounts.sort((a, b) => (a.region || '').localeCompare(b.region || '') || a.label.localeCompare(b.label));
+  }
+
   const frag = document.createDocumentFragment();
-  allAccounts.forEach((acc, i) => {
+  let prevRegion = null;
+  sortedAccounts.forEach((acc, i) => {
+    if (currentSortMode === 'region' && acc.region !== prevRegion) {
+      prevRegion = acc.region;
+      const separator = document.createElement('div');
+      separator.className = 'region-separator';
+      separator.innerHTML = `<span>${esc(acc.region || 'Unknown Region')}</span>`;
+      frag.appendChild(separator);
+    }
+
     const card = buildCard(acc);
     card.classList.add('is-entering');
     card.style.animationDelay = `${Math.min(i * 35, 220)}ms`;
     frag.appendChild(card);
-    // cleanup after animation
     setTimeout(() => {
       card.classList.remove('is-entering');
       card.style.animationDelay = '';
@@ -622,6 +665,15 @@ if (autoAcceptToggle) {
   });
 }
 
+if (sortSelect) {
+  sortSelect.value = currentSortMode;
+  sortSelect.addEventListener('change', async () => {
+    currentSortMode = sortSelect.value;
+    localStorage.setItem('accountsSortMode', currentSortMode);
+    await renderAllCards();
+  });
+}
+
 // ─── Refresh All ──────────────────────────────────────────────────────────────
 refreshAllBtn.addEventListener('click', async () => {
   if (allAccounts.length === 0) return;
@@ -765,6 +817,60 @@ document.getElementById('lock-vault-settings-btn').addEventListener('click', han
 function openSettings()  { settingsPanel.classList.remove('hidden'); }
 function closeSettings() { settingsPanel.classList.add('hidden'); }
 
+// ─── Updates ───────────────────────────────────────────────────────────────────
+const checkUpdatesBtn = document.getElementById('check-updates-btn');
+const downloadUpdateBtn = document.getElementById('download-update-btn');
+const updateCurrentVersionEl = document.getElementById('update-current-version');
+const updateStatusTextEl = document.getElementById('update-status-text');
+const autoCheckUpdates = localStorage.getItem('autoCheckUpdates') !== 'false';
+
+async function runUpdateCheck(silent = false) {
+  if (checkUpdatesBtn) checkUpdatesBtn.disabled = true;
+  if (!silent && updateStatusTextEl) updateStatusTextEl.textContent = 'Checking latest release...';
+  try {
+    const info = await invoke('check_for_updates');
+    if (updateCurrentVersionEl) {
+      updateCurrentVersionEl.textContent = `Current version: v${info.currentVersion}`;
+    }
+    if (info.updateAvailable) {
+      latestUpdateDownloadUrl = info.downloadUrl || info.releaseUrl || '';
+      if (downloadUpdateBtn) downloadUpdateBtn.classList.remove('hidden');
+      if (updateStatusTextEl) {
+        updateStatusTextEl.textContent = `Update available: v${info.latestVersion}.`;
+      }
+      if (!silent) showToast(`Update available: v${info.latestVersion}`, 'info', 7000);
+    } else {
+      latestUpdateDownloadUrl = '';
+      if (downloadUpdateBtn) downloadUpdateBtn.classList.add('hidden');
+      if (updateStatusTextEl) {
+        updateStatusTextEl.textContent = info.statusMessage || 'You are using the latest version.';
+      }
+      if (!silent) {
+        showToast(info.statusMessage || 'You are on the latest version.', 'success');
+      }
+    }
+  } catch (err) {
+    if (updateStatusTextEl) updateStatusTextEl.textContent = 'Failed to check for updates.';
+    if (!silent) showToast(String(err) || 'Update check failed', 'error');
+  } finally {
+    if (checkUpdatesBtn) checkUpdatesBtn.disabled = false;
+  }
+}
+
+checkUpdatesBtn?.addEventListener('click', () => runUpdateCheck(false));
+downloadUpdateBtn?.addEventListener('click', async () => {
+  if (!latestUpdateDownloadUrl) {
+    showToast('No update download URL available.', 'error');
+    return;
+  }
+  try {
+    await invoke('open_external', { url: latestUpdateDownloadUrl });
+    showToast('Opened update download in your browser.', 'success');
+  } catch (err) {
+    showToast(String(err) || 'Failed to open update URL', 'error');
+  }
+});
+
 async function handleLock() {
   try {
     await invoke('lock');
@@ -805,5 +911,8 @@ function showToast(message, type = 'info', duration = type === 'error' ? 7000 : 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   await initDataDragonVersion();
-  renderAllCards();
+  await renderAllCards();
+  if (autoCheckUpdates) {
+    runUpdateCheck(true);
+  }
 })();

@@ -146,6 +146,30 @@ body {
   gap: 8px;
 }
 
+.sort-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(0);
+}
+
+.sort-wrap span {
+  white-space: nowrap;
+}
+
+.sort-wrap select {
+  min-width: 180px;
+  padding: 6px 10px;
+  font-size: 12px;
+  height: 32px;
+  line-height: 1.1;
+  margin: 0;
+  vertical-align: middle;
+}
+
 /* ─── Buttons ────────────────────────────────────────────────────────────── */
 .btn-primary {
   background: linear-gradient(135deg, rgba(30, 58, 138, 1) 0%, rgba(17, 94, 170, 1) 100%);
@@ -300,8 +324,8 @@ select option { background: var(--bg-card); color: var(--text-primary); }
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
 }
 
 /* ─── Account Card ───────────────────────────────────────────────────────── */
@@ -311,7 +335,7 @@ select option { background: var(--bg-card); color: var(--text-primary); }
   border: 1px solid var(--border);
   border-left: 3px solid rgba(96, 165, 250, 0.35);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 11px;
   transition: background 0.22s var(--ease-out), transform 0.18s var(--ease-out), box-shadow 0.22s var(--ease-out), border-color 0.22s var(--ease-out);
   position: relative;
 }
@@ -370,7 +394,7 @@ select option { background: var(--bg-card); color: var(--text-primary); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12px 0 8px;
+  padding: 8px 0 6px;
   text-align: center;
 }
 
@@ -393,8 +417,8 @@ select option { background: var(--bg-card); color: var(--text-primary); }
 }
 
 .card-icon {
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   border: 2px solid transparent;
   object-fit: cover;
@@ -480,7 +504,7 @@ select option { background: var(--bg-card); color: var(--text-primary); }
 }
 
 .card-riotid {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--gold-light);
   margin-bottom: 5px;
@@ -507,16 +531,16 @@ select option { background: var(--bg-card); color: var(--text-primary); }
 .card-actions {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 0;
+  gap: 6px;
+  padding: 8px 0;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   margin-bottom: 10px;
 }
 
 .action-btn {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -722,12 +746,32 @@ select option { background: var(--bg-card); color: var(--text-primary); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-dim);
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
   gap: 6px;
+}
+
+.region-separator {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 2px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+}
+
+.region-separator::before,
+.region-separator::after {
+  content: '';
+  height: 1px;
+  background: var(--border-bright);
+  flex: 1;
 }
 
 .card-footer-ts { flex: 1; }

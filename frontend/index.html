@@ -36,6 +36,14 @@
   <div class="app-header">
     <h2>My Accounts</h2>
     <div class="header-right">
+      <label class="sort-wrap" for="sort-select">
+        <span>Sort As</span>
+        <select id="sort-select">
+          <option value="highest">Highest Rank</option>
+          <option value="lowest">Lowest Rank</option>
+          <option value="region">Region</option>
+        </select>
+      </label>
       <button class="btn-secondary" id="lobby-viewer-btn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Lobby Reveal
@@ -152,6 +160,16 @@
           <input type="checkbox" id="auto-accept-toggle">
           <span class="toggle-slider"></span>
         </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h4>Updates</h4>
+      <p class="hint" id="update-current-version">Current version: v1.0.0</p>
+      <p class="hint" id="update-status-text">Click "Check for Updates" to look for newer releases.</p>
+      <div class="modal-actions" style="margin-top:8px; padding-top:12px;">
+        <button class="btn-secondary" id="check-updates-btn">Check for Updates</button>
+        <button class="btn-primary hidden" id="download-update-btn">Download Update</button>
       </div>
     </div>
 
