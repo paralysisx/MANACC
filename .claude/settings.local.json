@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/hrist/lol-modskin/src-tauri/src/reveal_api/**)"
+    ]
+  }
+}
