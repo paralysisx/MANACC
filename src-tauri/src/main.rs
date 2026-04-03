@@ -34,6 +34,8 @@ fn main() {
             commands::auto_accept::set_auto_accept_enabled,
             commands::auto_accept::get_auto_accept_status,
             commands::shell::open_external,
+            commands::startup::get_startup_enabled,
+            commands::startup::set_startup_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");

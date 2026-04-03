@@ -282,11 +282,8 @@ function buildCard(account) {
   card.innerHTML = `
     <div class="card-hero">
       <div class="card-icon-wrap rank-${esc(topTier)}">
-        <img class="rank-armor-img" src="assets/rank-armor/${(topTier || 'UNRANKED').toLowerCase()}.png"
-             alt="" onerror="this.style.display='none'">
         <img class="card-icon" src="${esc(iconUrl)}" alt="icon"
              onerror="this.src='assets/default-icon.svg'">
-        <span class="card-level">${esc(String(level))}</span>
       </div>
       <div class="card-label">${esc(account.label)}</div>
       <div class="card-riotid">${esc(account.riotId)}</div>
@@ -493,11 +490,29 @@ async function handleLaunchAccount(id) {
   }
 }
 
+// ─── Delete Confirm Modal ─────────────────────────────────────────────────────
+const deleteModal      = document.getElementById('delete-modal');
+const deleteModalMsg   = document.getElementById('delete-modal-msg');
+const deleteCancelBtn  = document.getElementById('delete-cancel-btn');
+const deleteConfirmBtn = document.getElementById('delete-confirm-btn');
+
+let _deleteResolve = null;
+deleteCancelBtn.addEventListener('click',  () => { deleteModal.classList.add('hidden'); _deleteResolve?.(false); });
+deleteConfirmBtn.addEventListener('click', () => { deleteModal.classList.add('hidden'); _deleteResolve?.(true);  });
+
+function confirmDelete(label) {
+  return new Promise(resolve => {
+    _deleteResolve = resolve;
+    deleteModalMsg.textContent = `Delete "${label}" from the vault? This cannot be undone.`;
+    deleteModal.classList.remove('hidden');
+  });
+}
+
 // ─── Delete Account ───────────────────────────────────────────────────────────
 async function handleDelete(id) {
   const acc = allAccounts.find(a => a.id === id);
   if (!acc) return;
-  if (!confirm(`Delete "${acc.label}" from the vault? This cannot be undone.`)) return;
+  if (!await confirmDelete(acc.label)) return;
   try {
     await invoke('delete_account', { id });
     showToast(`"${acc.label}" deleted.`, 'info');
@@ -638,29 +653,41 @@ async function openLobbyViewer() {
 }
 
 // ─── Auto-accept toggle ───────────────────────────────────────────────────────
-const autoAcceptToggle = document.getElementById('auto-accept-toggle');
-if (autoAcceptToggle) {
-  (async () => {
-    try {
-      const enabled = await invoke('get_auto_accept_status');
-      autoAcceptToggle.checked = !!enabled;
-    } catch {
-      autoAcceptToggle.checked = false;
-    }
-  })();
+const autoAcceptToggle    = document.getElementById('auto-accept-toggle');
+const autoAcceptHeaderBtn = document.getElementById('auto-accept-header-btn');
 
-  autoAcceptToggle.addEventListener('change', async () => {
-    autoAcceptToggle.disabled = true;
-    try {
-      const enabled = await invoke('set_auto_accept_enabled', { enabled: autoAcceptToggle.checked });
-      autoAcceptToggle.checked = !!enabled;
-      showToast(enabled ? 'Auto-accept enabled.' : 'Auto-accept disabled.', 'info');
-    } catch (err) {
-      autoAcceptToggle.checked = !autoAcceptToggle.checked;
-      showToast(String(err) || 'Failed to update auto-accept.', 'error');
-    } finally {
-      autoAcceptToggle.disabled = false;
-    }
+function syncAutoAcceptUI(enabled) {
+  if (autoAcceptToggle) autoAcceptToggle.checked = !!enabled;
+  if (autoAcceptHeaderBtn) autoAcceptHeaderBtn.classList.toggle('header-btn--active', !!enabled);
+}
+
+(async () => {
+  try {
+    const enabled = await invoke('get_auto_accept_status');
+    syncAutoAcceptUI(enabled);
+  } catch {
+    syncAutoAcceptUI(false);
+  }
+})();
+
+async function setAutoAccept(enabled) {
+  try {
+    const result = await invoke('set_auto_accept_enabled', { enabled });
+    syncAutoAcceptUI(result);
+    showToast(result ? 'Auto-accept enabled.' : 'Auto-accept disabled.', 'info');
+  } catch (err) {
+    syncAutoAcceptUI(!enabled);
+    showToast(String(err) || 'Failed to update auto-accept.', 'error');
+  }
+}
+
+if (autoAcceptToggle) {
+  autoAcceptToggle.addEventListener('change', () => setAutoAccept(autoAcceptToggle.checked));
+}
+if (autoAcceptHeaderBtn) {
+  autoAcceptHeaderBtn.addEventListener('click', () => {
+    const next = !autoAcceptHeaderBtn.classList.contains('header-btn--active');
+    setAutoAccept(next);
   });
 }
 
@@ -676,9 +703,9 @@ if (sortSelect) {
 // ─── Refresh All ──────────────────────────────────────────────────────────────
 refreshAllBtn.addEventListener('click', async () => {
   if (allAccounts.length === 0) return;
-  const REFRESH_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+  const REFRESH_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
   refreshAllBtn.disabled = true;
-  refreshAllBtn.innerHTML = `${REFRESH_SVG} Refreshing\u2026`;
+  refreshAllBtn.innerHTML = REFRESH_SVG;
 
   try {
     const results = await invoke('refresh_all');
@@ -693,7 +720,7 @@ refreshAllBtn.addEventListener('click', async () => {
     showToast(String(err) || 'Refresh failed', 'error');
   } finally {
     refreshAllBtn.disabled = false;
-    refreshAllBtn.innerHTML = `${REFRESH_SVG} Refresh All`;
+    refreshAllBtn.innerHTML = REFRESH_SVG;
   }
 });
 
@@ -708,9 +735,7 @@ document.querySelector('.toggle-btn[data-target="field-password"]')?.addEventLis
   input.type = input.type === 'password' ? 'text' : 'password';
 });
 
-accountModal.addEventListener('click', (e) => {
-  if (e.target === accountModal) closeModal();
-});
+
 
 document.getElementById('field-region')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') handleModalSave();
@@ -794,12 +819,17 @@ async function handleModalSave() {
         saveBtn.disabled = false;
         return showModalError('Password is required.');
       }
-      await invoke('add_account', { account: { label, username, password, riotId, region } });
+      const newId = await invoke('add_account', { account: { label, username, password, riotId, region } });
+      closeModal();
+      await renderAllCards();
+      showToast('Account added! Fetching stats...', 'success');
+      handleRefreshCard(newId);
+      return;
     }
 
     closeModal();
     await renderAllCards();
-    showToast(id ? 'Account updated.' : 'Account added!', 'success');
+    showToast('Account updated.', 'success');
   } catch (err) {
     showModalError(String(err) || 'Failed to save.');
   } finally {
@@ -807,14 +837,142 @@ async function handleModalSave() {
   }
 }
 
+// ─── Theme System ─────────────────────────────────────────────────────────────
+let currentTheme = localStorage.getItem('appTheme') || 'default';
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  localStorage.setItem('appTheme', theme);
+
+  if (theme === 'default') {
+    delete document.body.dataset.theme;
+  } else {
+    document.body.dataset.theme = theme;
+  }
+
+  document.querySelectorAll('.theme-dot').forEach(dot => {
+    dot.classList.toggle('active', dot.dataset.theme === theme);
+  });
+
+  const themeBg = document.getElementById('theme-bg');
+  if (!themeBg) return;
+  themeBg.innerHTML = '';
+  themeBg.className = 'theme-bg';
+
+  if (theme === 'galaxy') {
+    createGalaxyBg(themeBg);
+  } else if (theme === 'starry') {
+    createStarryBg(themeBg);
+  }
+}
+
+function createGalaxyBg(container) {
+  const orbs = [
+    { color: '#ff00ff', size: 420, x: 8,  y: 4,  tx:  45, ty: -30, dur:  8, sc: 1.2  },
+    { color: '#00ffff', size: 360, x: 68, y: 12,  tx: -50, ty:  42, dur: 11, sc: 1.15 },
+    { color: '#ff6600', size: 310, x: 38, y: 58,  tx:  32, ty: -42, dur:  9, sc: 1.1  },
+    { color: '#00ff88', size: 330, x: 82, y: 48,  tx: -38, ty:  28, dur: 13, sc: 1.2  },
+    { color: '#ff3366', size: 290, x: 22, y: 78,  tx:  48, ty: -52, dur:  7, sc: 1.15 },
+    { color: '#6600ff', size: 370, x: 58, y: 72,  tx: -42, ty:  36, dur: 10, sc: 1.1  },
+    { color: '#ffff00', size: 260, x: 48, y: 28,  tx:  36, ty:  46, dur: 12, sc: 1.25 },
+  ];
+
+  orbs.forEach(orb => {
+    const el = document.createElement('div');
+    el.className = 'galaxy-orb';
+    el.style.cssText =
+      `width:${orb.size}px;height:${orb.size}px;` +
+      `left:${orb.x}%;top:${orb.y}%;` +
+      `background:radial-gradient(circle,${orb.color}55,transparent 70%);` +
+      `--tx:${orb.tx}px;--ty:${orb.ty}px;--dur:${orb.dur}s;--sc:${orb.sc};`;
+    container.appendChild(el);
+  });
+}
+
+function createStarryBg(container) {
+  const frag = document.createDocumentFragment();
+
+  for (let i = 0; i < 190; i++) {
+    const star  = document.createElement('div');
+    const size  = Math.random() < 0.65 ? 1 : Math.random() < 0.65 ? 2 : 3;
+    const isDrift = Math.random() < 0.12;
+    const minOp  = 0.15 + Math.random() * 0.3;
+    const maxOp  = Math.min(minOp + 0.35 + Math.random() * 0.5, 1);
+    const dur    = isDrift ? 15 + Math.random() * 20 : 2 + Math.random() * 4;
+
+    star.className = isDrift ? 'star drifting' : 'star';
+    star.style.cssText =
+      `width:${size}px;height:${size}px;` +
+      `left:${(Math.random() * 100).toFixed(2)}%;` +
+      `top:${(Math.random() * 100).toFixed(2)}%;` +
+      `--dur:${dur.toFixed(1)}s;` +
+      `--min-opacity:${minOp.toFixed(2)};--max-opacity:${maxOp.toFixed(2)};` +
+      `--sc:${(1 + Math.random() * 0.8).toFixed(2)};` +
+      `--tx:${((Math.random() - 0.5) * 60).toFixed(1)}px;` +
+      `--ty:${((Math.random() - 0.5) * 40).toFixed(1)}px;` +
+      `animation-delay:-${(Math.random() * 5).toFixed(2)}s;`;
+    frag.appendChild(star);
+  }
+
+  // Larger glowing blue stars
+  for (let i = 0; i < 14; i++) {
+    const star = document.createElement('div');
+    star.className = 'star';
+    star.style.cssText =
+      `width:3px;height:3px;` +
+      `left:${(Math.random() * 100).toFixed(2)}%;` +
+      `top:${(Math.random() * 100).toFixed(2)}%;` +
+      `background:#aad4ff;` +
+      `box-shadow:0 0 4px 2px rgba(110,181,255,0.6);` +
+      `--dur:${(3 + Math.random() * 3).toFixed(1)}s;` +
+      `--min-opacity:0.40;--max-opacity:1;--sc:1.5;` +
+      `animation-delay:-${(Math.random() * 5).toFixed(2)}s;`;
+    frag.appendChild(star);
+  }
+
+  container.appendChild(frag);
+}
+
+// Apply saved theme on startup
+applyTheme(currentTheme);
+
+// Theme dot click handlers
+document.querySelectorAll('.theme-dot').forEach(dot => {
+  dot.addEventListener('click', () => applyTheme(dot.dataset.theme));
+});
+
 // ─── Settings Panel ───────────────────────────────────────────────────────────
 document.getElementById('settings-btn').addEventListener('click', openSettings);
 document.getElementById('settings-close-btn').addEventListener('click', closeSettings);
 document.getElementById('lock-btn').addEventListener('click', handleLock);
-document.getElementById('lock-vault-settings-btn').addEventListener('click', handleLock);
 
 function openSettings()  { settingsPanel.classList.remove('hidden'); }
 function closeSettings() { settingsPanel.classList.add('hidden'); }
+
+// ─── Startup toggle ───────────────────────────────────────────────────────────
+const startupToggle = document.getElementById('startup-toggle');
+if (startupToggle) {
+  (async () => {
+    try {
+      startupToggle.checked = await invoke('get_startup_enabled');
+    } catch {
+      startupToggle.checked = false;
+    }
+  })();
+
+  startupToggle.addEventListener('change', async () => {
+    startupToggle.disabled = true;
+    try {
+      await invoke('set_startup_enabled', { enabled: startupToggle.checked });
+      showToast(startupToggle.checked ? 'VaultX will launch on startup.' : 'Startup disabled.', 'info');
+    } catch (err) {
+      startupToggle.checked = !startupToggle.checked;
+      showToast(String(err) || 'Failed to update startup setting.', 'error');
+    } finally {
+      startupToggle.disabled = false;
+    }
+  });
+}
 
 // ─── Updates (tauri-plugin-updater) ──────────────────────────────────────────
 const checkUpdatesBtn    = document.getElementById('check-updates-btn');
@@ -824,6 +982,17 @@ const updateStatusTextEl     = document.getElementById('update-status-text');
 const updateProgressEl       = document.getElementById('update-progress');
 
 let pendingUpdate = null;
+
+// Set the real app version from Tauri
+(async () => {
+  try {
+    const { getVersion } = window.__TAURI__.app;
+    const ver = await getVersion();
+    if (updateCurrentVersionEl) updateCurrentVersionEl.textContent = `Current version: v${ver}`;
+    const footerEl = document.querySelector('.settings-version');
+    if (footerEl) footerEl.textContent = `v${ver}`;
+  } catch (_) {}
+})();
 
 async function runUpdateCheck(silent = false) {
   if (checkUpdatesBtn) checkUpdatesBtn.disabled = true;
