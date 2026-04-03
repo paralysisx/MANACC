@@ -6,7 +6,6 @@ A lightweight Windows desktop app for managing multiple League of Legends accoun
 
 - **Encrypted Vault** — All credentials are stored locally and protected behind a master password. Nothing is sent to any server.
 - **Account Cards** — Each account displays its Riot ID, region, rank (Solo/Duo & Flex), win rate, wins/losses, and top champions pulled live from op.gg.
-- **One-Click Launch** — Logs you into League of Legends instantly without typing credentials.
 - **Lobby Viewer** — Reveals the ranks and profiles of everyone in your current lobby before the game starts.
 - **Auto Accept** — Automatically accepts the match-found screen in the background.
 - **Refresh Stats** — Update a single account or all accounts at once with the latest ranked data.
