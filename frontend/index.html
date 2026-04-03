@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="theme-bg" class="theme-bg"></div>
 <div class="app-layout">
 
   <!-- Title Bar -->
@@ -44,17 +45,17 @@
           <option value="region">Region</option>
         </select>
       </label>
-      <button class="btn-secondary" id="lobby-viewer-btn">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Lobby Reveal
+      <button class="header-btn" id="lobby-viewer-btn" title="Lobby Reveal">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
-      <button class="btn-secondary" id="refresh-all-btn">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        Refresh All
+      <button class="header-btn" id="refresh-all-btn" title="Refresh All">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       </button>
-      <button class="btn-primary" id="add-account-btn">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add Account
+      <button class="header-btn" id="auto-accept-header-btn" title="Auto Accept Queue">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+      <button class="header-btn header-btn--add" id="add-account-btn" title="Add Account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
   </div>
@@ -150,27 +151,42 @@
   <div class="settings-body">
 
     <div class="settings-section">
-      <h4>Queue</h4>
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-label">Auto-accept ready checks</div>
-          <div class="toggle-desc">Accepts queue pops while the app is open and this toggle is enabled.</div>
+      <h4>Appearance</h4>
+      <div class="theme-selector">
+        <div class="theme-option">
+          <button class="theme-dot" data-theme="default" title="Default"></button>
+          <span class="theme-dot-label">Default</span>
         </div>
-        <label class="toggle-switch">
-          <input type="checkbox" id="auto-accept-toggle">
-          <span class="toggle-slider"></span>
-        </label>
+        <div class="theme-option">
+          <button class="theme-dot" data-theme="dark" title="Dark Mode"></button>
+          <span class="theme-dot-label">Dark</span>
+        </div>
+        <div class="theme-option">
+          <button class="theme-dot" data-theme="light" title="Light Mode"></button>
+          <span class="theme-dot-label">Light</span>
+        </div>
+        <div class="theme-option">
+          <button class="theme-dot" data-theme="galaxy" title="Galaxy"></button>
+          <span class="theme-dot-label">Galaxy</span>
+        </div>
+        <div class="theme-option">
+          <button class="theme-dot" data-theme="starry" title="Starry Night"></button>
+          <span class="theme-dot-label">Starry</span>
+        </div>
       </div>
     </div>
 
     <div class="settings-section">
-      <h4>Updates</h4>
-      <p class="hint" id="update-current-version">Current version: v1.0.2</p>
-      <p class="hint" id="update-status-text">Click "Check for Updates" to look for newer releases.</p>
-      <div class="update-progress hidden" id="update-progress"></div>
-      <div class="modal-actions" style="margin-top:8px; padding-top:12px;">
-        <button class="btn-secondary" id="check-updates-btn">Check for Updates</button>
-        <button class="btn-primary hidden" id="install-update-btn">Install Update</button>
+      <h4>System</h4>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">Launch on Windows startup</div>
+          <div class="toggle-desc">Automatically start VaultX when Windows boots.</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="startup-toggle">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
     </div>
 
@@ -180,23 +196,36 @@
       <p class="hint">Click the refresh button on any card or use "Refresh All" to update.</p>
     </div>
 
-    <div class="settings-section">
-      <h4>Vault</h4>
-      <p class="hint">Your accounts are encrypted with AES-256-GCM and stored locally on this PC.</p>
-      <button class="btn-secondary btn-full" id="lock-vault-settings-btn">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        Lock &amp; Sign Out
-      </button>
-    </div>
-
   </div>
   <div class="settings-footer">
-    <span class="settings-version">v1.0.0</span>
+    <p class="hint" id="update-current-version">Current version: ...</p>
+    <p class="hint" id="update-status-text" style="margin-bottom:10px;">Click "Check for Updates" to look for newer releases.</p>
+    <div class="update-progress hidden" id="update-progress"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="check-updates-btn">Check for Updates</button>
+      <button class="btn-primary hidden" id="install-update-btn">Install Update</button>
+    </div>
+    <span class="settings-version">...</span>
   </div>
 </div>
 
 <!-- ─── Toast Container ───────────────────────────────────────────────── -->
 <div class="toast-container" id="toast-container"></div>
+
+<!-- ─── Delete Confirm Modal ──────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal confirm-modal">
+    <div class="confirm-modal-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+    </div>
+    <h3 class="confirm-modal-title">Delete Account</h3>
+    <p class="confirm-modal-msg" id="delete-modal-msg"></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="delete-cancel-btn">Cancel</button>
+      <button class="btn-danger" id="delete-confirm-btn">Delete</button>
+    </div>
+  </div>
+</div>
 
 <!-- ─── Lobby Viewer Modal ────────────────────────────────────────────── -->
 <div class="modal-overlay hidden" id="lobby-modal">
