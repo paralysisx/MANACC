@@ -1715,6 +1715,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "is_elevated"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5299060ff5db63e788015dcb9525ad9b84f4fd9717ed2cbdeba5018cbf42f9b5"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1913,12 +1922,13 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lol-account-manager"
-version = "1.0.7"
+version = "1.0.9"
 dependencies = [
  "arboard",
  "base64 0.22.1",
  "dirs 5.0.1",
  "hex",
+ "is_elevated",
  "reqwest 0.12.28",
  "ring",
  "serde",

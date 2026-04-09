@@ -29,7 +29,8 @@ base64         = "0.22"
 urlencoding    = "2"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg      = "0.52"
+is_elevated = "0.1"
 
 [profile.release]
 opt-level     = "z"

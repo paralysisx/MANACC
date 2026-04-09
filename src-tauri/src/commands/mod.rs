@@ -7,3 +7,4 @@ pub mod shell;
 pub mod lobby;
 pub mod auto_accept;
 pub mod startup;
+pub mod elevation;
