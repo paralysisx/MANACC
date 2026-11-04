@@ -3,263 +3,181 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; connect-src 'self' https://ddragon.leagueoflegends.com https://github.com https://objects.githubusercontent.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://ddragon.leagueoflegends.com https://opgg-static.akamaized.net data: blob:; script-src 'self' 'unsafe-inline';">
+    content="default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://ddragon.leagueoflegends.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://opgg-static.akamaized.net https://ddragon.leagueoflegends.com; script-src 'self' 'unsafe-inline';">
   <title>VaultX</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="theme-bg" class="theme-bg"></div>
-<div class="app-layout">
 
-  <!-- Title Bar -->
-  <div class="title-bar" data-tauri-drag-region>
-    <span class="title-bar-title">VaultX</span>
-    <div class="title-bar-controls">
-      <button id="settings-btn" title="Settings">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
-      <button id="lock-btn" title="Lock vault">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      </button>
-      <button id="tb-minimize" title="Minimize">
-        <svg width="12" height="2" viewBox="0 0 12 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="0" y1="1" x2="12" y2="1"/></svg>
-      </button>
-      <button id="tb-maximize" title="Maximize">
-        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="0.75" y="0.75" width="9.5" height="9.5" rx="1.5"/></svg>
-      </button>
-      <button id="tb-close" title="Close" class="close-btn">
-        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="1" y1="1" x2="10" y2="10"/><line x1="10" y1="1" x2="1" y2="10"/></svg>
-      </button>
-    </div>
-  </div>
+<div id="app"></div>
 
-  <!-- App Header -->
-  <div class="app-header">
-    <h2>My Accounts</h2>
-    <div class="header-right">
-      <label class="sort-wrap" for="sort-select">
-        <span>Sort As</span>
-        <select id="sort-select">
-          <option value="highest">Highest Rank</option>
-          <option value="lowest">Lowest Rank</option>
+<!-- Normal mode: sidebar + detail -->
+<template id="normal-shell">
+  <div class="shell">
+    <aside class="side">
+      <div class="side-brand" data-tauri-drag-region>
+        <img src="icon.svg" alt="">
+        <span class="bar-title" data-tauri-drag-region>VaultX</span>
+      </div>
+      <div class="side-controls">
+        <select id="sort-select" title="Sort accounts">
+          <option value="highest">Highest rank</option>
+          <option value="lowest">Lowest rank</option>
           <option value="region">Region</option>
         </select>
+        <button class="add-btn" id="add-account-btn" aria-label="Add account" title="Add account"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="side-list" id="account-list"></div>
+      <div class="side-actions">
+        <button class="btn ghost toggle" id="auto-accept-header-btn" title="Automatically accept the match-found screen">Auto-accept</button>
+        <button class="btn ghost" id="lobby-viewer-btn">Lobby</button>
+        <button class="btn ghost" id="refresh-all-btn">Refresh all</button>
+        <button class="btn ghost" id="settings-btn">Settings</button>
+      </div>
+    </aside>
+    <main class="detail-pane">
+      <div class="win-row">
+        <div class="drag" data-tauri-drag-region></div>
+        <button class="icon-btn" id="lock-btn" aria-label="Lock vault" title="Lock vault"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
+        <button class="win" id="tb-minimize" aria-label="Minimize" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5h10"/></svg></button>
+        <button class="win" id="tb-maximize" aria-label="Maximize" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
+        <button class="win close" id="tb-close" aria-label="Close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
+      </div>
+      <div class="detail" id="detail"></div>
+      <div class="empty hidden" id="empty-state"><strong>No accounts yet</strong><span>Add your first one to get started.</span></div>
+    </main>
+  </div>
+</template>
+
+<!-- Low performance mode: compact text list, no images -->
+<template id="low-shell">
+  <div class="bar" data-tauri-drag-region>
+    <span class="bar-title" data-tauri-drag-region>VaultX</span>
+    <div class="bar-spacer" data-tauri-drag-region></div>
+    <button class="icon-btn" id="settings-btn" aria-label="Settings" title="Settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+    <button class="icon-btn" id="lock-btn" aria-label="Lock vault" title="Lock vault"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
+    <button class="win" id="tb-minimize" aria-label="Minimize" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5h10"/></svg></button>
+    <button class="win" id="tb-maximize" aria-label="Maximize" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
+    <button class="win close" id="tb-close" aria-label="Close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
+  </div>
+  <div class="toolbar">
+    <h1>Accounts</h1>
+    <span class="count" id="account-count"></span>
+    <select id="sort-select" title="Sort accounts">
+      <option value="highest">Highest rank</option>
+      <option value="lowest">Lowest rank</option>
+      <option value="region">Region</option>
+    </select>
+    <div class="toolbar-spacer"></div>
+    <button class="btn ghost toggle" id="auto-accept-header-btn" title="Automatically accept the match-found screen">Auto-accept</button>
+    <button class="btn ghost" id="lobby-viewer-btn">Lobby</button>
+    <button class="btn ghost" id="refresh-all-btn">Refresh all</button>
+    <button class="btn primary" id="add-account-btn">Add account</button>
+  </div>
+  <div class="list">
+    <div id="account-list"></div>
+    <div class="empty hidden" id="empty-state"><strong>No accounts yet</strong><span>Add your first one to get started.</span></div>
+  </div>
+</template>
+
+<!-- Add / Edit -->
+<div class="overlay hidden" id="account-modal">
+  <div class="modal wide">
+    <h3 id="modal-title">Add account</h3>
+    <input type="hidden" id="edit-id">
+    <div class="fields">
+      <label class="field">Label
+        <input type="text" id="field-label" placeholder="Main, Smurf, Alt" maxlength="30">
       </label>
-      <button class="header-btn" id="lobby-viewer-btn" title="Lobby Reveal">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      </button>
-      <button class="header-btn" id="refresh-all-btn" title="Refresh All">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      </button>
-      <button class="header-btn" id="auto-accept-header-btn" title="Auto Accept Queue">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-      <button class="header-btn header-btn--add" id="add-account-btn" title="Add Account">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- Cards -->
-  <div class="cards-container">
-    <div class="cards-grid" id="cards-grid">
-      <div class="empty-state hidden" id="empty-state">
-        <div class="empty-icon">
-          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="2" y="3" width="20" height="18" rx="3"/><circle cx="12" cy="9" r="3"/><path d="M6.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>
-        </div>
-        <h3>No accounts yet</h3>
-        <p>Click <strong>+ Add Account</strong> to store your first League account.</p>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ─── Add / Edit Modal ──────────────────────────────────────────────── -->
-<div class="modal-overlay hidden" id="account-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="modal-title">Add Account</h3>
-      <button class="modal-close" id="modal-close-btn">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="edit-id">
-
-      <div class="form-group">
-        <label for="field-label">Display Label</label>
-        <input type="text" id="field-label" placeholder="e.g. Main, Smurf, Alt #2" maxlength="30">
-      </div>
-
-      <div class="form-group">
-        <label for="field-username">LoL Username (for login)</label>
-        <input type="text" id="field-username" placeholder="Your League of Legends username" autocomplete="off">
-      </div>
-
-      <div class="form-group">
-        <label for="field-password">LoL Password</label>
-        <div class="input-with-toggle">
-          <input type="password" id="field-password" placeholder="Your League of Legends password" autocomplete="new-password">
-          <button class="toggle-btn" data-target="field-password">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>
-        </div>
-        <p id="edit-pw-hint" class="hint hidden" style="margin-top:5px;">Leave blank to keep existing password.</p>
-      </div>
-
-      <div class="form-group">
-        <label for="field-riotid">Riot ID</label>
-        <input type="text" id="field-riotid" placeholder="GameName#TAG  (e.g. Faker#KR1)" autocomplete="off">
-      </div>
-
-      <div class="form-group">
-        <label for="field-region">Region</label>
+      <label class="field">Riot ID
+        <input type="text" id="field-riotid" placeholder="GameName#TAG" autocomplete="off">
+      </label>
+      <label class="field">Username
+        <input type="text" id="field-username" autocomplete="off">
+      </label>
+      <label class="field">Password
+        <input type="password" id="field-password" autocomplete="new-password">
+      </label>
+      <label class="field">Region
         <select id="field-region">
-          <option value="NA">NA — North America</option>
-          <option value="EUW">EUW — EU West</option>
-          <option value="EUNE">EUNE — EU Nordic &amp; East</option>
-          <option value="KR">KR — Korea</option>
-          <option value="JP">JP — Japan</option>
-          <option value="BR">BR — Brazil</option>
-          <option value="LAN">LAN — Latin America North</option>
-          <option value="LAS">LAS — Latin America South</option>
-          <option value="OCE">OCE — Oceania</option>
-          <option value="TR">TR — Turkey</option>
-          <option value="RU">RU — Russia</option>
+          <option value="NA">NA</option>
+          <option value="EUW">EUW</option>
+          <option value="EUNE">EUNE</option>
+          <option value="KR">KR</option>
+          <option value="JP">JP</option>
+          <option value="BR">BR</option>
+          <option value="LAN">LAN</option>
+          <option value="LAS">LAS</option>
+          <option value="OCE">OCE</option>
+          <option value="TR">TR</option>
+          <option value="RU">RU</option>
         </select>
-      </div>
-
-      <p id="modal-error" class="error-text hidden"></p>
-
-      <div class="modal-actions">
-        <button class="btn-secondary" id="modal-cancel-btn">Cancel</button>
-        <button class="btn-primary" id="modal-save-btn">Save Account</button>
-      </div>
+      </label>
     </div>
-  </div>
-</div>
-
-<!-- ─── Settings Panel ────────────────────────────────────────────────── -->
-<div class="settings-panel hidden" id="settings-panel">
-  <div class="settings-header">
-    <h3>Settings</h3>
-    <button class="settings-close" id="settings-close-btn">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
-    </button>
-  </div>
-  <div class="settings-body">
-
-    <div class="settings-section">
-      <h4>Appearance</h4>
-      <div class="theme-selector">
-        <div class="theme-option">
-          <button class="theme-dot" data-theme="default" title="Default"></button>
-          <span class="theme-dot-label">Default</span>
-        </div>
-        <div class="theme-option">
-          <button class="theme-dot" data-theme="dark" title="Dark Mode"></button>
-          <span class="theme-dot-label">Dark</span>
-        </div>
-        <div class="theme-option">
-          <button class="theme-dot" data-theme="light" title="Light Mode"></button>
-          <span class="theme-dot-label">Light</span>
-        </div>
-        <div class="theme-option">
-          <button class="theme-dot" data-theme="galaxy" title="Galaxy"></button>
-          <span class="theme-dot-label">Galaxy</span>
-        </div>
-        <div class="theme-option">
-          <button class="theme-dot" data-theme="starry" title="Starry Night"></button>
-          <span class="theme-dot-label">Starry</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <h4>System</h4>
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-label">Launch on Windows startup</div>
-          <div class="toggle-desc">Automatically start VaultX when Windows boots.</div>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" id="startup-toggle">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
-
-    <div class="settings-section">
-      <h4>Stats Source</h4>
-      <p class="hint">Stats are fetched automatically from <strong>op.gg</strong>. No API key needed.</p>
-      <p class="hint">Click the refresh button on any card or use "Refresh All" to update.</p>
-    </div>
-
-  </div>
-  <div class="settings-footer">
-    <p class="hint" id="update-current-version">Current version: ...</p>
-    <p class="hint" id="update-status-text" style="margin-bottom:10px;">Click "Check for Updates" to look for newer releases.</p>
-    <div class="update-progress hidden" id="update-progress"></div>
+    <p id="modal-error" class="error hidden"></p>
     <div class="modal-actions">
-      <button class="btn-secondary" id="check-updates-btn">Check for Updates</button>
-      <button class="btn-primary hidden" id="install-update-btn">Install Update</button>
+      <button class="btn danger left hidden" id="modal-delete-btn">Delete</button>
+      <button class="btn" id="modal-cancel-btn">Cancel</button>
+      <button class="btn primary" id="modal-save-btn">Save</button>
     </div>
-    <span class="settings-version">...</span>
   </div>
 </div>
 
-<!-- ─── Toast Container ───────────────────────────────────────────────── -->
+<!-- Settings -->
+<div class="overlay hidden" id="settings-panel">
+  <div class="modal wide">
+    <h3>Settings</h3>
+    <div class="field">Appearance
+      <div class="segmented">
+        <button id="mode-normal">Normal</button>
+        <button id="mode-low">Low performance</button>
+      </div>
+    </div>
+    <div class="mode-lines hint" id="mode-lines"></div>
+    <div class="restart-row hidden" id="mode-restart-row">
+      <span class="hint">VaultX restarts to apply this and locks your vault.</span>
+      <button class="btn primary" id="mode-restart-btn">Restart</button>
+    </div>
+    <label class="check"><input type="checkbox" id="startup-toggle"> Launch on Windows startup</label>
+    <p class="hint" id="update-status-text"></p>
+    <div class="modal-actions">
+      <span class="hint left" id="update-current-version"></span>
+      <button class="btn" id="check-updates-btn">Check for updates</button>
+      <button class="btn primary hidden" id="install-update-btn">Install update</button>
+      <button class="btn" id="settings-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm -->
+<div class="overlay hidden" id="delete-modal">
+  <div class="modal">
+    <p id="delete-modal-msg"></p>
+    <div class="modal-actions">
+      <button class="btn" id="delete-cancel-btn">Cancel</button>
+      <button class="btn danger" id="delete-confirm-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lobby -->
+<div class="overlay hidden" id="lobby-modal">
+  <div class="modal wide">
+    <h3>Lobby</h3>
+    <p class="hint" id="lobby-meta"></p>
+    <div class="lobby-list" id="lobby-list"></div>
+    <p id="lobby-error" class="error hidden"></p>
+    <div class="modal-actions">
+      <button class="btn left" id="lobby-open-opgg-btn">op.gg</button>
+      <button class="btn" id="lobby-open-tracker-btn">Tracker</button>
+      <button class="btn" id="lobby-refresh-btn">Refresh</button>
+      <button class="btn primary" id="lobby-done-btn">Done</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-container" id="toast-container"></div>
 
-<!-- ─── Delete Confirm Modal ──────────────────────────────────────────── -->
-<div class="modal-overlay hidden" id="delete-modal">
-  <div class="modal confirm-modal">
-    <div class="confirm-modal-icon">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-    </div>
-    <h3 class="confirm-modal-title">Delete Account</h3>
-    <p class="confirm-modal-msg" id="delete-modal-msg"></p>
-    <div class="modal-actions">
-      <button class="btn-secondary" id="delete-cancel-btn">Cancel</button>
-      <button class="btn-danger" id="delete-confirm-btn">Delete</button>
-    </div>
-  </div>
-</div>
-
-<!-- ─── Lobby Viewer Modal ────────────────────────────────────────────── -->
-<div class="modal-overlay hidden" id="lobby-modal">
-  <div class="modal lobby-modal">
-    <div class="modal-header">
-      <h3 id="lobby-modal-title">Lobby Viewer</h3>
-      <button class="modal-close" id="lobby-close-btn">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="2" y1="2" x2="12" y2="12"/><line x1="12" y1="2" x2="2" y2="12"/></svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <div class="lobby-meta" id="lobby-meta"></div>
-      <div class="lobby-list" id="lobby-list"></div>
-      <p id="lobby-error" class="error-text hidden"></p>
-      <div class="modal-actions">
-        <button class="btn-secondary" id="lobby-open-opgg-btn">Open OP.GG</button>
-        <button class="btn-secondary" id="lobby-open-tracker-btn">Open Tracker</button>
-        <button class="btn-secondary" id="lobby-refresh-btn">Refresh</button>
-        <button class="btn-primary" id="lobby-done-btn">Done</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-  // Set up Tauri window controls immediately (before app.js loads)
-  (async () => {
-    const { getCurrentWindow } = window.__TAURI__.window;
-    const appWindow = getCurrentWindow();
-    document.getElementById('tb-minimize').addEventListener('click', () => appWindow.minimize());
-    document.getElementById('tb-maximize').addEventListener('click', () => appWindow.toggleMaximize());
-    document.getElementById('tb-close').addEventListener('click', () => appWindow.close());
-  })();
-</script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -53,10 +53,21 @@ pub fn set_auto_accept_enabled(enabled: bool) -> Result<bool, String> {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_thread = stop_flag.clone();
         let handle = thread::spawn(move || {
+            // One client for the whole session: building one sets up TLS, which is
+            // too expensive to repeat on every poll.
+            let client = match reqwest::blocking::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .build()
+            {
+                Ok(c) => c,
+                Err(_) => return,
+            };
             let last_accept_ms: AtomicU64 = AtomicU64::new(0);
             while !stop_flag_thread.load(Ordering::Relaxed) {
-                run_accept_tick(&last_accept_ms);
-                thread::sleep(Duration::from_millis(1200));
+                let client_running = run_accept_tick(&client, &last_accept_ms);
+                // Poll fast only while League is open. Parked so that turning
+                // auto-accept off can wake this thread instead of waiting it out.
+                thread::park_timeout(Duration::from_millis(if client_running { 1200 } else { 5000 }));
             }
         });
 
@@ -69,6 +80,7 @@ pub fn set_auto_accept_enabled(enabled: bool) -> Result<bool, String> {
         if let Some(mut runtime) = guard.take() {
             runtime.stop_flag.store(true, Ordering::Relaxed);
             if let Some(handle) = runtime.handle.take() {
+                handle.thread().unpark();
                 let _ = handle.join();
             }
         }
@@ -83,39 +95,33 @@ pub fn get_auto_accept_status() -> Result<bool, String> {
     Ok(guard.is_some())
 }
 
-fn run_accept_tick(last_accept_ms: &AtomicU64) {
+/// Returns whether the League client is running.
+fn run_accept_tick(client: &reqwest::blocking::Client, last_accept_ms: &AtomicU64) -> bool {
     let lockfile_path = match find_lockfile_path() {
         Some(p) => p,
-        None => return,
+        None => return false,
     };
     let lockfile = match read_lockfile(&lockfile_path) {
         Some(v) => v,
-        None => return,
+        None => return false,
     };
 
-    let client = match reqwest::blocking::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-
-    if !ready_check_actionable(&client, &lockfile) {
-        return;
+    if !ready_check_actionable(client, &lockfile) {
+        return true;
     }
 
     let now = now_ms();
     let prev = last_accept_ms.load(Ordering::Relaxed);
     if now.saturating_sub(prev) < 2000 {
-        return;
+        return true;
     }
 
     // Small delay helps avoid race conditions where ReadyCheck just appeared.
     thread::sleep(Duration::from_millis(450));
-    if post_accept_ready_check(&client, &lockfile) {
+    if post_accept_ready_check(client, &lockfile) {
         last_accept_ms.store(now, Ordering::Relaxed);
     }
+    true
 }
 
 fn ready_check_actionable(client: &reqwest::blocking::Client, lockfile: &LcuLockfile) -> bool {

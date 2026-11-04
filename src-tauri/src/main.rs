@@ -9,6 +9,7 @@ mod session;
 mod storage;
 
 use std::sync::Mutex;
+use tauri::Manager;
 
 fn main() {
     // Release builds only: a dev build must not fire the installed app's "VaultX"
@@ -57,6 +58,21 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Mutex::new(session::SessionState::default()))
+        .setup(|app| {
+            let low = commands::ui_mode::is_low();
+            let config = app.config().app.windows.first().cloned().ok_or("No window configured")?;
+            let mut window = tauri::WebviewWindowBuilder::from_config(app, &config)?
+                .initialization_script(format!("window.__VAULTX_LOW__ = {low};"));
+            if low {
+                // Saves about 70 MB. Low gets its own profile because a browser left
+                // over from a restart would otherwise be reused, ignoring these flags.
+                window = window
+                    .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu")
+                    .data_directory(app.path().app_local_data_dir()?.join("EBWebView-low"));
+            }
+            window.build()?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::auth::vault_exists,
             commands::auth::create_vault,
@@ -79,6 +95,7 @@ fn main() {
             commands::shell::open_external,
             commands::startup::get_startup_enabled,
             commands::startup::set_startup_enabled,
+            commands::ui_mode::set_ui_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");

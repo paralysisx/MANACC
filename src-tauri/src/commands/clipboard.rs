@@ -42,6 +42,13 @@ pub fn copy_password(id: String, state: State<'_, Mutex<SessionState>>) -> Resul
 
 fn set_clipboard(text: &str) -> Result<(), String> {
     let mut cb = Clipboard::new().map_err(|e| format!("Clipboard error: {e}"))?;
-    cb.set_text(text).map_err(|e| format!("Clipboard write error: {e}"))?;
+    // Usernames and passwords must not land in Windows clipboard history or cloud sync.
+    let set = cb.set();
+    #[cfg(target_os = "windows")]
+    let set = {
+        use arboard::SetExtWindows;
+        set.exclude_from_monitoring()
+    };
+    set.text(text).map_err(|e| format!("Clipboard write error: {e}"))?;
     Ok(())
 }

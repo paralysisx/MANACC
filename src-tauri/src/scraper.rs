@@ -158,7 +158,7 @@ fn parse_from_html(html: &str, riot_id: &str) -> Result<SummonerStats, String> {
 // ─── HTML extraction ───────────────────────────────────────────────────────
 
 /// Extract og:description content from the HTML.
-/// Example value: "Mikiri#prlzd / Diamond 1 1 75LP / 34Win 35Lose Win rate 49% / Yasuo - ..."
+/// Example value: "Name#TAG / Diamond 2 75 LP / 34Win 35Lose Win rate 49% / Yasuo - ..."
 fn extract_meta_description(html: &str) -> Option<String> {
     // Standard attribute order: property="og:description" content="..."
     for marker in &[
