@@ -11,7 +11,9 @@ mod storage;
 use std::sync::Mutex;
 
 fn main() {
-    #[cfg(target_os = "windows")]
+    // Release builds only: a dev build must not fire the installed app's "VaultX"
+    // task (it would open the installed exe and exit) or re-point it at target\debug.
+    #[cfg(all(target_os = "windows", not(debug_assertions)))]
     {
         use is_elevated::is_elevated;
 

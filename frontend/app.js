@@ -981,6 +981,9 @@ const updateCurrentVersionEl = document.getElementById('update-current-version')
 const updateStatusTextEl     = document.getElementById('update-status-text');
 const updateProgressEl       = document.getElementById('update-progress');
 
+const autoCheckUpdates = localStorage.getItem('autoCheckUpdates') !== 'false';
+const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000; // for sessions left open
+
 let pendingUpdate = null;
 
 // Set the real app version from Tauri
@@ -1021,7 +1024,17 @@ async function runUpdateCheck(silent = false) {
 
 checkUpdatesBtn?.addEventListener('click', () => runUpdateCheck(false));
 
-installUpdateBtn?.addEventListener('click', async () => {
+installUpdateBtn?.addEventListener('click', installPendingUpdate);
+
+async function runAutoUpdate() {
+  await runUpdateCheck(true);
+  if (pendingUpdate) {
+    showToast(`Updating VaultX to v${pendingUpdate.version}...`, 'info', 7000);
+    await installPendingUpdate();
+  }
+}
+
+async function installPendingUpdate() {
   if (!pendingUpdate) return;
   try {
     if (installUpdateBtn)   installUpdateBtn.disabled = true;
@@ -1055,7 +1068,7 @@ installUpdateBtn?.addEventListener('click', async () => {
     if (installUpdateBtn)  installUpdateBtn.disabled = false;
     if (updateProgressEl)  updateProgressEl.classList.add('hidden');
   }
-});
+}
 
 async function handleLock() {
   try {
@@ -1099,6 +1112,7 @@ function showToast(message, type = 'info', duration = type === 'error' ? 7000 : 
   await initDataDragonVersion();
   await renderAllCards();
   if (autoCheckUpdates) {
-    runUpdateCheck(true);
+    runAutoUpdate();
+    setInterval(runAutoUpdate, AUTO_UPDATE_INTERVAL_MS);
   }
 })();

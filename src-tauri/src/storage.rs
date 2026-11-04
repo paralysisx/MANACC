@@ -29,6 +29,12 @@ pub struct Account {
 }
 
 fn vault_path() -> PathBuf {
+    // Dev builds can point at a throwaway vault so testing never touches the real one.
+    #[cfg(debug_assertions)]
+    if let Ok(dir) = std::env::var("VAULTX_DEV_DATA_DIR") {
+        return PathBuf::from(dir).join("accounts.enc");
+    }
+
     dirs::data_dir()
         .expect("Cannot find AppData directory")
         .join("LAV")

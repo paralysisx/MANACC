@@ -202,32 +202,25 @@ fn extract_profile_icon(html: &str) -> Option<String> {
 
 /// Extract summoner level from the HTML.
 ///
-/// op.gg places the level number in the RSC wire format immediately after the
-/// profile icon CDN URL.  The URL ends with `f_png,w_200&v={big-build-version}`;
-/// the very next 1–9999 number in the stream is the summoner level.
+/// op.gg renders the level as a badge straight after the profile icon:
+/// `<img src="...profile_icons/...f_webp,w_200&amp;v=N"/><div ...><span ...>946</span>`
 fn extract_level(html: &str) -> Option<i64> {
-    // The profile icon CDN transform always contains this substring
-    const MARKER: &str = "f_png,w_200";
-    let start = html.find(MARKER)?;
+    const MARKER: &str = "f_webp,w_200";
 
-    // Only inspect the 400 chars that follow the marker
-    let window = &html[start + MARKER.len()..(start + MARKER.len() + 400).min(html.len())];
-
-    let mut seen_big = false; // set once we pass the 9-10 digit CDN build-version number
-    let mut num_buf  = String::new();
-
-    for ch in window.chars() {
-        if ch.is_ascii_digit() {
-            num_buf.push(ch);
-        } else if !num_buf.is_empty() {
-            if let Ok(n) = num_buf.parse::<i64>() {
-                if n > 999_999 {
-                    seen_big = true;          // consumed the build version (e.g. 1772770973)
-                } else if seen_big && n >= 1 && n <= 9_999 {
-                    return Some(n);           // this is the summoner level
-                }
+    for (idx, _) in html.match_indices(MARKER) {
+        let rest = &html[idx + MARKER.len()..];
+        let Some(img_end) = rest.find("/>") else { continue };
+        let rest = &rest[img_end + 2..];
+        // The badge sits right after the image; anything further is another element.
+        let Some(span) = rest.find("<span").filter(|&i| i <= 80) else { continue };
+        let rest = &rest[span..];
+        let Some(open_end) = rest.find('>') else { continue };
+        let rest = &rest[open_end + 1..];
+        let Some(close) = rest.find('<') else { continue };
+        if let Ok(level) = rest[..close].trim().parse::<i64>() {
+            if (1..=9_999).contains(&level) {
+                return Some(level);
             }
-            num_buf.clear();
         }
     }
     None
@@ -302,13 +295,15 @@ fn parse_champions_from_description(description: &str) -> Vec<ChampionStat> {
 
 // ─── Parsing utilities ─────────────────────────────────────────────────────
 
-/// Return the last run of digits immediately before `suffix` in `text`.
+/// Return the number immediately before `suffix` in `text`, allowing a space
+/// before the suffix and thousands separators ("75LP", "75 LP", "1,881 LP").
 fn number_before(text: &str, suffix: &str) -> Option<i64> {
     let idx    = text.find(suffix)?;
-    let before = &text[..idx];
+    let before = text[..idx].trim_end();
     let digits: String = before
         .chars().rev()
-        .take_while(|c| c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit() || *c == ',')
+        .filter(|c| *c != ',')
         .collect::<String>()
         .chars().rev()
         .collect();
@@ -341,6 +336,7 @@ fn html_decode(s: &str) -> String {
      .replace("&gt;",   ">")
      .replace("&quot;", "\"")
      .replace("&#39;",  "'")
+     .replace("&#x27;", "'")
      .replace("&nbsp;", " ")
 }
 
@@ -390,4 +386,63 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 
 fn is_leap(y: i64) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_divisional_rank_with_spaced_lp() {
+        let r = parse_rank_from_description("A#B / Diamond 2 75 LP / 192Win 164Lose Win rate 54% / Teemo - 19Win 15Lose Win rate 56%");
+        assert_eq!((r.tier.as_str(), r.division.as_str(), r.lp, r.wins, r.losses), ("DIAMOND", "II", 75, 192, 164));
+    }
+
+    #[test]
+    fn parses_zero_lp() {
+        let r = parse_rank_from_description("A#B / Diamond 1 0 LP / 149Win 104Lose Win rate 59% / x");
+        assert_eq!((r.division.as_str(), r.lp), ("I", 0));
+    }
+
+    #[test]
+    fn parses_apex_rank_with_thousands_separator() {
+        let r = parse_rank_from_description("A#B / Challenger 1,881 LP / 448Win 371Lose Win rate 55% / x");
+        assert_eq!((r.tier.as_str(), r.division.as_str(), r.lp), ("CHALLENGER", "", 1881));
+    }
+
+    #[test]
+    fn parses_legacy_unspaced_lp() {
+        assert_eq!(parse_rank_from_description("A#B / Diamond 1 1 75LP / 34Win 35Lose Win rate 49% / x").lp, 75);
+    }
+
+    #[test]
+    fn decodes_apostrophes_in_champion_names() {
+        let html = r#"<meta property="og:description" content="A#B / Gold 4 62 LP / 1Win 1Lose Win rate 50% / Kai&#x27;Sa - 91Win 97Lose Win rate 48%">"#;
+        let desc = extract_meta_description(html).unwrap();
+        assert_eq!(parse_champions_from_description(&desc)[0].name, "Kai'Sa");
+    }
+
+    #[test]
+    fn extracts_level_from_icon_badge() {
+        let html = r#"<img src="https://x/profile_icons/profileIcon6.jpg?image=q_auto:good,f_webp,w_200&amp;v=1793805621"/><div class="mt-[-11px] text-center"><span class="inline-flex h-5">946</span></div>"#;
+        assert_eq!(extract_level(html), Some(946));
+    }
+
+    #[test]
+    fn ignores_unrelated_images_when_extracting_level() {
+        let html = r#"<img src="a?f_webp,w_200"/><p>long text with no badge nearby, long enough to pass the limit of eighty chars</p><span>12</span>"#;
+        assert_eq!(extract_level(html), None);
+    }
+
+    /// Hits the live site: `cargo test -- --ignored live_opgg --nocapture`
+    #[test]
+    #[ignore]
+    fn live_opgg_profile() {
+        let stats = scrape_profile("Hide on bush#KR1", "KR").unwrap();
+        println!("{stats:#?}");
+        assert_ne!(stats.solo.tier, "UNRANKED");
+        assert!(stats.solo.lp > 0);
+        assert!(stats.summoner_level.is_some());
+        assert!(!stats.top_champions.is_empty());
+    }
 }

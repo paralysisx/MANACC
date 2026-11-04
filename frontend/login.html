@@ -222,7 +222,20 @@
       if (e.key === 'Enter') document.getElementById('setup-btn').click();
     });
 
+    // ─── Auto update ──────────────────────────────────────────────────────────
+    // Runs before unlock so an update's restart doesn't throw away an open session.
+    async function autoUpdate() {
+      if (localStorage.getItem('autoCheckUpdates') === 'false') return;
+      try {
+        const update = await window.__TAURI__.updater.check();
+        if (update) await update.downloadAndInstall();
+      } catch (err) {
+        console.warn('Auto-update failed:', err);
+      }
+    }
+
     init();
+    autoUpdate();
   </script>
 </body>
 </html>
