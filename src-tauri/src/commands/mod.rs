@@ -6,6 +6,7 @@ pub mod launcher_cmd;
 pub mod shell;
 pub mod lobby;
 pub mod auto_accept;
+pub mod queue;
 pub mod startup;
 pub mod elevation;
 pub mod ui_mode;

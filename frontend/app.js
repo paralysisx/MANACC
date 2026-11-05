@@ -38,6 +38,9 @@ const lobbyMeta      = document.getElementById('lobby-meta');
 const lobbyList      = document.getElementById('lobby-list');
 const lobbyError     = document.getElementById('lobby-error');
 
+// Shown wherever something is loading. Only ever on screen during the wait.
+const LOADER = '<span class="loader"></span>';
+
 // ─── Rank helpers ─────────────────────────────────────────────────────────────
 const TIER_COLORS = {
   IRON: '#8a8a8a', BRONZE: '#b0764a', SILVER: '#a9b3bd',
@@ -102,6 +105,24 @@ function buildOpggUrl(riotId, region) {
   return `https://www.op.gg/summoners/${r}/${encodeURIComponent(name)}`;
 }
 
+const UGG_SERVERS = {
+  NA: 'na1', EUW: 'euw1', EUNE: 'eun1', KR: 'kr', JP: 'jp1',
+  BR: 'br1', LAN: 'la1', LAS: 'la2', OCE: 'oc1', TR: 'tr1', RU: 'ru'
+};
+
+function buildUggUrl(riotId, region) {
+  const name = riotId.replace('#', '-');
+  const s = UGG_SERVERS[region] || `${region.toLowerCase()}1`;
+  return `https://u.gg/lol/profile/${s}/${encodeURIComponent(name)}/overview`;
+}
+
+/** The op.gg and u.gg buttons for an account. They open in the browser. */
+function profileLinksHTML(account) {
+  const site = (name, url) =>
+    `<button class="site js-profile" data-url="${esc(url)}" title="Open on ${name}">${name}</button>`;
+  return `<span class="sites">${site('op.gg', buildOpggUrl(account.riotId, account.region))}${site('u.gg', buildUggUrl(account.riotId, account.region))}</span>`;
+}
+
 function lobbyRiotIds(players) {
   return players.map(p => `${p.gameName}#${p.tagLine}`).join(',');
 }
@@ -124,6 +145,8 @@ const ICONS = {
   refresh: icon('<path d="M20 11a8 8 0 0 0-14.3-4.3L3 9.500M3 4v5.500h5.500M4 13a8 8 0 0 0 14.3 4.3L21 14.500M21 20v-5.500h-5.500"/>'),
   edit:    icon('<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/>'),
   check:   icon('<path d="M5 12.500l4.500 4.500L19 7.500"/>'),
+  eye:     icon('<path d="M2 12s3.600-7 10-7 10 7 10 7-3.600 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff:  icon('<path d="M3 3l18 18M10.500 5.200A9.800 9.800 0 0 1 12 5c6.400 0 10 7 10 7a17.500 17.500 0 0 1-3.300 4.100M6.600 6.600C3.700 8.500 2 12 2 12s3.600 7 10 7a9.600 9.600 0 0 0 4.300-1"/>'),
   play:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.500v15a1 1 0 0 0 1.500.860l12.500-7.500a1 1 0 0 0 0-1.720L8.500 3.640A1 1 0 0 0 7 4.500z"/></svg>',
 };
 
@@ -152,6 +175,7 @@ function buildRow(account) {
       <span class="sub-line">
         <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
         <span class="region">${esc(account.region)}</span>
+        ${profileLinksHTML(account)}
       </span>
     </div>
     <div class="cell" title="${esc(updated)}">${rank}</div>
@@ -161,7 +185,7 @@ function buildRow(account) {
       <button class="icon-btn quiet js-copy-pw" data-id="${id}" title="Copy password">${ICONS.key}</button>
       <button class="icon-btn quiet js-refresh" data-id="${id}" title="Refresh stats">${ICONS.refresh}</button>
       <button class="icon-btn quiet js-edit" data-id="${id}" title="Edit or delete">${ICONS.edit}</button>
-      <button class="play js-launch" data-id="${id}" title="Open Riot Client">${ICONS.play}</button>
+      <button class="play js-launch" data-id="${id}" title="${playTitle(id)}">${ICONS.play}</button>
     </div>`;
   return row;
 }
@@ -202,12 +226,20 @@ const DD_OVERRIDES = {
   "Miss Fortune": "MissFortune", "Twisted Fate": "TwistedFate", "Xin Zhao": "XinZhao",
 };
 
-function champIconUrl(name) {
-  const key = DD_OVERRIDES[name] || name.split(/\s+/)
+function champKey(name) {
+  return DD_OVERRIDES[name] || name.split(/\s+/)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join('')
     .replace(/[^a-zA-Z0-9]/g, '');
-  return `https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${key}.png`;
+}
+
+function champIconUrl(name) {
+  return `https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/champion/${champKey(name)}.png`;
+}
+
+// The 380px tile: about 0.6 MB decoded, against 3.3 MB for the full splash.
+function champArtUrl(name) {
+  return `https://ddragon.leagueoflegends.com/cdn/img/champion/tiles/${champKey(name)}_0.jpg`;
 }
 
 function avatarHTML(account, size) {
@@ -220,10 +252,6 @@ function avatarHTML(account, size) {
 }
 
 const ROLE_NAMES = { TOP: 'Top', JUNGLE: 'Jungle', MIDDLE: 'Mid', BOTTOM: 'Bot', UTILITY: 'Support' };
-
-function fixed(value, digits = 1) {
-  return Number(value || 0).toFixed(digits);
-}
 
 function wrClass(pct) {
   return pct >= 50 ? 'good' : 'bad';
@@ -238,13 +266,6 @@ function queueHTML(title, rank) {
     <span class="stat-value" style="color:${ranked ? tierColor(rank) : 'var(--dim)'}">${esc(tierName(rank))}</span>
     ${ranked ? `<span class="queue-line"><span>${esc(rank.lp)} LP · ${esc(rank.wins)}W ${esc(rank.losses)}L</span>${pct != null ? `<span class="${wrClass(pct)}">${pct}%</span>` : ''}</span>
       <span class="wr-track"><span class="wr-fill" style="width:${pct ?? 0}%"></span></span>` : ''}
-  </div>`;
-}
-
-function metricHTML(label, value, title) {
-  return `<div class="metric" title="${esc(title)}">
-    <span class="metric-value">${esc(value)}</span>
-    <span class="stat-label">${label}</span>
   </div>`;
 }
 
@@ -263,22 +284,67 @@ function recentHTML(recent) {
     <span class="game ${m.win ? 'is-win' : 'is-loss'}" title="${esc(m.champion)}: ${m.win ? 'Win' : 'Loss'}, ${esc(m.kills)}/${esc(m.deaths)}/${esc(m.assists)}">
       ${esc(m.champion.slice(0, 2))}<img src="${esc(champIconUrl(m.champion))}" alt="">
     </span>`).join('');
-  const role = recent.mainRole && ROLE_NAMES[recent.mainRole]
-    ? `${ROLE_NAMES[recent.mainRole]} ${recent.mainRoleGames}/${recent.games}`
-    : '';
 
   return `<div class="recent">
     <div class="recent-head">
-      <span class="stat-label">Last ${esc(recent.games)} ranked${role ? ` · ${esc(role)}` : ''}</span>
+      <span class="stat-label">Last ${esc(recent.games)} ranked</span>
       <span class="recent-record">${streakText ? `<span class="streak ${latestWin ? 'good' : 'bad'}" title="Current ${latestWin ? 'win' : 'loss'} streak">${streakText}</span> ` : ''}${esc(recent.wins)}W ${esc(recent.losses)}L <span class="${wrClass(pct)}">${pct}%</span></span>
     </div>
     <div class="games" aria-label="Last ${esc(recent.games)} ranked games, oldest to newest: ${esc(recent.wins)} wins, ${esc(recent.losses)} losses">${games}</div>
-    <div class="metrics">
-      ${metricHTML('KDA', fixed(recent.kda), `${fixed(recent.kills)} / ${fixed(recent.deaths)} / ${fixed(recent.assists)} average kills / deaths / assists`)}
-      ${metricHTML('CS/min', fixed(recent.csPerMin), 'Creep score per minute')}
-      ${metricHTML('Dmg/min', Math.round(recent.damagePerMin), 'Damage to champions per minute')}
-      ${metricHTML('Vision/min', fixed(recent.visionPerMin, 2), 'Vision score per minute')}
+  </div>`;
+}
+
+// Which queue's champions a card shows. Saved per account, Solo/Duo by default.
+function champQueueFor(accountId) {
+  return localStorage.getItem(`champQueue:${accountId}`) === 'flex' ? 'flex' : 'solo';
+}
+
+function champListFor(stats, queue) {
+  return ((queue === 'flex' ? stats?.flexChampions : stats?.topChampions) || []).slice(0, 5);
+}
+
+function champPeriod(stats, queue) {
+  if (queue === 'flex') return 'Flex';
+  return stats?.championScope === 'season' ? 'Solo/Duo' : `last ${esc(stats?.recent?.games ?? stats?.topChampions?.length)}`;
+}
+
+function highlightsHTML(stats, queue) {
+  const top = champListFor(stats, queue)[0];
+  const recent = stats?.recent;
+  const role = recent?.mainRole && ROLE_NAMES[recent.mainRole];
+  if (!top && !role) return '';
+  return `<div class="highlights">
+    ${top ? `<div class="highlight">
+      <span class="stat-label">Most played, ${champPeriod(stats, queue)}</span>
+      <span class="highlight-value">${esc(top.name)} <span class="highlight-sub">${esc(top.games)} G</span></span>
+    </div>` : ''}
+    ${role ? `<div class="highlight" title="Riot has no all-time role stat, so this comes from recent ranked games.">
+      <span class="stat-label">Main role, last ${esc(recent.games)}</span>
+      <span class="highlight-value">${esc(role)} <span class="highlight-sub">${esc(recent.mainRoleGames)} of ${esc(recent.games)}</span></span>
+    </div>` : ''}
+  </div>`;
+}
+
+function champSectionHTML(account, queue) {
+  const stats = account.stats;
+  if (!stats) return '';
+  const champs = champListFor(stats, queue);
+  const id = esc(account.id);
+  const title = queue === 'solo' && stats.championScope !== 'season'
+    ? `Most played, last ${esc(stats.recent?.games ?? champs.length)} ranked`
+    : 'Most played this season';
+  const empty = queue === 'flex'
+    ? (stats.flexChampions ? 'No Flex games this season.' : 'Refresh to load Flex champions.')
+    : 'No Solo/Duo games yet.';
+  return `<div class="card-champs">
+    <div class="champs-head">
+      <span class="stat-label">${title}</span>
+      <div class="queue-switch">
+        <button class="js-champ-queue ${queue === 'solo' ? 'active' : ''}" data-account="${id}" data-queue="solo">Solo/Duo</button>
+        <button class="js-champ-queue ${queue === 'flex' ? 'active' : ''}" data-account="${id}" data-queue="flex">Flex</button>
+      </div>
     </div>
+    ${champs.length ? champs.map(champRowHTML).join('') : `<span class="hint">${empty}</span>`}
   </div>`;
 }
 
@@ -287,8 +353,7 @@ function champRowHTML(c) {
   return `<div class="champ" title="${esc(c.name)}">
     <span class="champ-icon">${esc(c.name.slice(0, 2))}<img src="${esc(champIconUrl(c.name))}" alt=""></span>
     <span class="champ-name">${esc(c.name)}</span>
-    <span class="champ-cell">${esc(c.games)}g</span>
-    <span class="champ-cell">${c.kda != null ? `${fixed(c.kda)} KDA` : ''}</span>
+    <span class="champ-cell" title="${esc(c.games)} games">${esc(c.games)} G</span>
     <span class="champ-cell ${wr != null ? wrClass(wr) : ''}">${wr != null ? `${wr}%` : '-'}</span>
   </div>`;
 }
@@ -297,7 +362,9 @@ function buildCard(account) {
   const stats = account.stats;
   const solo = stats?.solo;
   const id = esc(account.id);
-  const champs = (stats?.topChampions || []).slice(0, 3);
+  const queue = champQueueFor(account.id);
+  // The art follows the switch, but keeps a champion when that queue has none.
+  const artChampion = champListFor(stats, queue)[0]?.name ?? champListFor(stats, 'solo')[0]?.name;
   const updated = stats?.fetchedAt
     ? `Updated ${new Date(stats.fetchedAt).toLocaleString()}`
     : 'No stats yet';
@@ -305,9 +372,8 @@ function buildCard(account) {
   const card = document.createElement('article');
   card.className = 'card';
   card.dataset.row = account.id;
-  card.style.setProperty('--stripe', isRanked(solo) ? tierColor(solo) : 'rgba(255, 255, 255, 0.55)');
   card.innerHTML = `
-    <div class="card-stripes"></div>
+    ${artChampion ? `<img class="card-art" src="${esc(champArtUrl(artChampion))}" alt="">` : ''}
     <div class="card-head">
       ${avatarHTML(account, 'medium')}
       <div class="card-id">
@@ -316,10 +382,15 @@ function buildCard(account) {
           <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
           <span class="region">${esc(account.region)}</span>
         </span>
-        ${stats?.summonerLevel != null ? `<span class="stat-sub">Level ${esc(stats.summonerLevel)}</span>` : ''}
+        <span class="sub-line meta-line">
+          ${stats?.summonerLevel != null ? `<span class="stat-sub">Level ${esc(stats.summonerLevel)}</span>` : ''}
+          ${profileLinksHTML(account)}
+        </span>
       </div>
-      <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.label)}" title="Open Riot Client">${ICONS.play}</button>
+      <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.label)}" title="${playTitle(id)}">${ICONS.play}</button>
     </div>
+
+    ${highlightsHTML(stats, queue)}
 
     <div class="queues" title="${esc(updated)}">
       ${queueHTML('Solo / Duo', solo)}
@@ -328,15 +399,14 @@ function buildCard(account) {
 
     ${recentHTML(stats?.recent)}
 
-    ${champs.length
-      ? `<div class="card-champs">${champs.map(champRowHTML).join('')}</div>`
-      : ''}
+    ${champSectionHTML(account, queue)}
 
     ${!stats?.recent ? `<span class="hint">${stats ? 'Refresh for recent-game analytics.' : 'No stats yet. Refresh to fetch them.'}</span>` : ''}
 
     <div class="card-foot">
       <button class="card-action js-copy-user" data-id="${id}" title="Copy username">${ICONS.user}<span>Username</span></button>
       <button class="card-action js-copy-pw" data-id="${id}" title="Copy password">${ICONS.key}<span>Password</span></button>
+      <button class="icon-btn js-reveal" data-id="${id}" aria-label="Show username and password" title="Show username and password">${ICONS.eye}</button>
       <span class="toolbar-spacer"></span>
       <button class="icon-btn js-refresh" data-id="${id}" aria-label="Refresh stats" title="Refresh stats">${ICONS.refresh}</button>
       <button class="icon-btn js-edit" data-id="${id}" aria-label="Edit or delete" title="Edit or delete">${ICONS.edit}</button>
@@ -383,7 +453,16 @@ appRoot.addEventListener('error', (e) => {
 }, true);
 
 appRoot.addEventListener('click', async (e) => {
-  const profileBtn = e.target.closest('.js-opgg');
+  const queueBtn = e.target.closest('.js-champ-queue');
+  if (queueBtn) {
+    const { account: accountId, queue } = queueBtn.dataset;
+    localStorage.setItem(`champQueue:${accountId}`, queue);
+    const acc = allAccounts.find(a => a.id === accountId);
+    if (acc) accountList.querySelector(`[data-row="${accountId}"]`)?.replaceWith(buildAccount(acc));
+    return;
+  }
+
+  const profileBtn = e.target.closest('.js-opgg, .js-profile');
   if (profileBtn) {
     invoke('open_external', { url: profileBtn.dataset.url }).catch(() => {});
     return;
@@ -394,7 +473,7 @@ appRoot.addEventListener('click', async (e) => {
   const id = btn.dataset.id;
 
   if (btn.classList.contains('js-launch')) {
-    await handleLaunchAccount(id, btn);
+    await handleLaunchAccount(id);
   } else if (btn.classList.contains('js-edit')) {
     openEditModal(id);
   } else if (btn.classList.contains('js-refresh')) {
@@ -416,30 +495,109 @@ appRoot.addEventListener('click', async (e) => {
     } catch (err) {
       showToast(String(err) || 'Failed to copy', 'error');
     }
+  } else if (btn.classList.contains('js-reveal')) {
+    await toggleCredentials(id);
   }
 });
 
+// Swaps only the icon, so a label that is showing a revealed value is left alone.
 function showCopied(btn) {
-  const original = btn.innerHTML;
-  btn.innerHTML = LOW ? ICONS.check : `${ICONS.check}<span>Copied</span>`;
+  if (btn.classList.contains('copied')) return;
+  const original = btn.querySelector('svg').outerHTML;
+  btn.querySelector('svg').outerHTML = ICONS.check;
   btn.classList.add('copied');
   setTimeout(() => {
-    btn.innerHTML = original;
+    btn.querySelector('svg').outerHTML = original;
     btn.classList.remove('copied');
   }, 1000);
 }
 
-async function handleLaunchAccount(id, btn) {
+// ─── Show username and password ───────────────────────────────────────────────
+// Shown in place of the two labels, and hidden again after a short while.
+const REVEAL_MS = 15_000;
+const revealTimers = {};
+
+function setCredentialLabels(card, username, password) {
+  const shown = username != null;
+  const user = card.querySelector('.js-copy-user');
+  const pass = card.querySelector('.js-copy-pw');
+  user.querySelector('span').textContent = shown ? username : 'Username';
+  pass.querySelector('span').textContent = shown ? password : 'Password';
+  user.title = shown ? `Copy username: ${username}` : 'Copy username';
+  pass.title = 'Copy password';
+  card.classList.toggle('revealed', shown);
+  const eye = card.querySelector('.js-reveal');
+  eye.innerHTML = shown ? ICONS.eyeOff : ICONS.eye;
+  eye.title = shown ? 'Hide username and password' : 'Show username and password';
+  eye.setAttribute('aria-label', eye.title);
+}
+
+function hideCredentials(id) {
+  clearTimeout(revealTimers[id]);
+  delete revealTimers[id];
+  const card = accountList.querySelector(`[data-row="${id}"]`);
+  if (card?.classList.contains('revealed')) setCredentialLabels(card, null, null);
+}
+
+async function toggleCredentials(id) {
+  if (revealTimers[id]) return hideCredentials(id);
+  const acc = allAccounts.find(a => a.id === id);
+  const card = accountList.querySelector(`[data-row="${id}"]`);
+  if (!acc || !card) return;
+  try {
+    const password = await invoke('get_password', { id });
+    setCredentialLabels(card, acc.username, password);
+    revealTimers[id] = setTimeout(() => hideCredentials(id), REVEAL_MS);
+  } catch (err) {
+    showToast(String(err), 'error');
+  }
+}
+
+/** What to queue after sign-in for an account: { queue, first, second }, or null. */
+function queueSettingFor(accountId) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`autoQueue:${accountId}`) || 'null');
+    return saved && (saved.queue === 'solo' || saved.queue === 'flex') ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The Play button's tooltip says what it will do for this account. */
+function playTitle(accountId) {
+  const auto = queueSettingFor(accountId);
+  if (!auto) return 'Sign in and open League';
+  return `Sign in and queue ${auto.queue === 'flex' ? 'Ranked Flex' : 'Ranked Solo/Duo'}`;
+}
+
+function saveQueueSetting(accountId, setting) {
+  if (setting) localStorage.setItem(`autoQueue:${accountId}`, JSON.stringify(setting));
+  else localStorage.removeItem(`autoQueue:${accountId}`);
+}
+
+async function handleLaunchAccount(id) {
   const acc = allAccounts.find(a => a.id === id);
   if (!acc) return;
-  btn.disabled = true;
+  // Signing in types into the Riot Client, so only one can run at a time.
+  const playButtons = () => appRoot.querySelectorAll('.js-launch');
+  playButtons().forEach(b => { b.disabled = true; });
+  setProgressToast(`Signing in to ${acc.label}...`, 'launch-toast');
   try {
-    await invoke('launch_account', { id });
-    showToast(`Riot Client opened for ${acc.label}.`, 'success');
+    const message = await invoke('launch_account', { id });
+    const auto = queueSettingFor(id);
+    if (!auto) {
+      showToast(message, 'success', 6000);
+    } else {
+      const queueName = auto.queue === 'flex' ? 'Ranked Flex' : 'Ranked Solo/Duo';
+      setProgressToast(`${message} Queueing ${queueName} once League is ready...`, 'launch-toast');
+      const queued = await invoke('queue_up', { id, queue: auto.queue, firstRole: auto.first, secondRole: auto.second });
+      showToast(queued, 'success', 8000);
+    }
   } catch (err) {
-    showToast(String(err) || 'Launch failed', 'error');
+    showToast(String(err) || 'Sign-in failed', 'error', 9000);
   } finally {
-    btn.disabled = false;
+    setProgressToast(null, 'launch-toast');
+    playButtons().forEach(b => { b.disabled = false; });
   }
 }
 
@@ -483,6 +641,7 @@ modalDeleteBtn.addEventListener('click', async () => {
   if (!acc || !await confirmDelete(acc.label)) return;
   try {
     await invoke('delete_account', { id: acc.id });
+    saveQueueSetting(acc.id, null);
     closeModal();
     await renderAccounts();
     showToast(`${acc.label} deleted.`);
@@ -525,7 +684,7 @@ async function fetchLobby() {
   const refreshBtn = document.getElementById('lobby-refresh-btn');
   refreshBtn.disabled = true;
   lobbyError.classList.add('hidden');
-  lobbyMeta.textContent = 'Checking League client...';
+  lobbyMeta.innerHTML = `${LOADER}Checking League client...`;
   lobbyList.innerHTML = '';
 
   try {
@@ -645,7 +804,7 @@ function showStalePrompt() {
   if (!prompt) {
     prompt = document.createElement('div');
     prompt.id = 'stale-prompt';
-    prompt.className = 'toast prompt';
+    prompt.className = 'toast sticky prompt';
     prompt.innerHTML = `
       <span id="stale-text"></span>
       <button class="btn primary" id="stale-refresh-btn">Refresh</button>
@@ -665,6 +824,27 @@ function hideStalePrompt() {
 document.getElementById('add-account-btn').addEventListener('click', openAddModal);
 document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
 document.getElementById('modal-save-btn').addEventListener('click', handleModalSave);
+
+const queueField = document.getElementById('field-queue');
+const role1Field = document.getElementById('field-role1');
+const role2Field = document.getElementById('field-role2');
+queueField.addEventListener('change', syncQueueFields);
+role1Field.addEventListener('change', syncQueueFields);
+
+/** Roles only show when queueing; Fill takes no second role. */
+function syncQueueFields() {
+  const queueing = queueField.value !== '';
+  accountModal.querySelectorAll('.queue-role').forEach(el => el.classList.toggle('hidden', !queueing));
+  role2Field.disabled = role1Field.value === 'FILL';
+  if (role2Field.disabled) role2Field.value = '';
+}
+
+function setQueueFields(setting) {
+  queueField.value = setting?.queue || '';
+  role1Field.value = setting?.first || '';
+  role2Field.value = setting?.second || '';
+  syncQueueFields();
+}
 
 function openAddModal() {
   modalTitle.textContent = 'Add account';
@@ -687,6 +867,7 @@ function openEditModal(id) {
   document.getElementById('field-username').value = acc.username;
   document.getElementById('field-riotid').value   = acc.riotId;
   document.getElementById('field-region').value   = acc.region;
+  setQueueFields(queueSettingFor(id));
   document.getElementById('field-password').placeholder = 'Leave blank to keep current';
   modalDeleteBtn.classList.remove('hidden');
   accountModal.classList.remove('hidden');
@@ -703,6 +884,7 @@ function clearModalFields() {
     document.getElementById(id).value = '';
   });
   document.getElementById('field-region').value = 'NA';
+  setQueueFields(null);
   document.getElementById('modal-error').classList.add('hidden');
 }
 
@@ -726,6 +908,13 @@ async function handleModalSave() {
   if (!/^.+#.+$/.test(riotId)) return showModalError('Riot ID must look like GameName#TAG.');
   if (!id && !password) return showModalError('Password is required.');
 
+  const first = role1Field.value;
+  const second = first === 'FILL' ? '' : role2Field.value;
+  const queueSetting = queueField.value ? { queue: queueField.value, first, second } : null;
+  if (queueSetting && !first) return showModalError('Pick a first role to queue.');
+  if (queueSetting && first !== 'FILL' && !second) return showModalError('Pick a second role to queue.');
+  if (queueSetting && first === second) return showModalError('The two roles must be different.');
+
   const saveBtn = document.getElementById('modal-save-btn');
   saveBtn.disabled = true;
 
@@ -734,10 +923,12 @@ async function handleModalSave() {
       const updates = { label, username, riotId, region };
       if (password) updates.password = password;
       await invoke('update_account', { id, updates });
+      saveQueueSetting(id, queueSetting);
       closeModal();
       await renderAccounts();
     } else {
       const newId = await invoke('add_account', { account: { label, username, password, riotId, region } });
+      saveQueueSetting(newId, queueSetting);
       closeModal();
       await renderAccounts();
       refreshAccount(newId).then(result => {
@@ -816,7 +1007,7 @@ window.__TAURI__.app.getVersion()
 
 async function runUpdateCheck(silent = false) {
   checkUpdatesBtn.disabled = true;
-  if (!silent) updateStatusEl.textContent = 'Checking for updates...';
+  if (!silent) updateStatusEl.innerHTML = `${LOADER}Checking for updates...`;
   try {
     const update = await window.__TAURI__.updater.check();
     pendingUpdate = update || null;
@@ -844,7 +1035,7 @@ async function runAutoUpdate() {
 async function installPendingUpdate() {
   if (!pendingUpdate) return;
   installUpdateBtn.disabled = true;
-  updateStatusEl.textContent = 'Downloading update...';
+  updateStatusEl.innerHTML = `${LOADER}Downloading update...`;
   try {
     await pendingUpdate.downloadAndInstall();
     // The installer normally restarts the app before this line runs.
@@ -873,21 +1064,21 @@ async function handleLock() {
 }
 
 // ─── Toasts ───────────────────────────────────────────────────────────────────
-/** A toast that stays until replaced; null removes it. */
-function setProgressToast(message) {
-  let toast = document.getElementById('progress-toast');
+/** A toast that stays until replaced; null removes it. Each id is its own toast. */
+function setProgressToast(message, id = 'progress-toast') {
+  let toast = document.getElementById(id);
   if (message == null) { toast?.remove(); return; }
   if (!toast) {
     toast = document.createElement('div');
-    toast.id = 'progress-toast';
-    toast.className = 'toast';
+    toast.id = id;
+    toast.className = 'toast sticky';
     toastContainer.appendChild(toast);
   }
-  toast.textContent = message;
+  toast.innerHTML = `${LOADER}${esc(message)}`;
 }
 
 function showToast(message, type = 'info', duration = type === 'error' ? 6000 : 3000) {
-  const toasts = toastContainer.querySelectorAll('.toast:not(#progress-toast):not(#stale-prompt)');
+  const toasts = toastContainer.querySelectorAll('.toast:not(.sticky)');
   if (toasts.length >= 3) toasts[0].remove();
 
   const toast = document.createElement('div');
@@ -899,8 +1090,14 @@ function showToast(message, type = 'info', duration = type === 'error' ? 6000 : 
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
-  if (!LOW) await initDataDragonVersion();
+  // Saved stats go on screen straight away, before anything touches the network.
+  // The version check reads its cache first, so icons are right on the first draw.
+  const versionCheck = LOW ? null : initDataDragonVersion();
+  const versionFromCache = ddVersion;
   await renderAccounts();
+  versionCheck?.then(() => {
+    if (ddVersion !== versionFromCache) renderList();
+  });
   refreshAllAccounts();
   if (autoCheckUpdates) {
     runAutoUpdate();

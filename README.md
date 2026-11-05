@@ -20,7 +20,8 @@ A lightweight Windows desktop app for managing multiple League of Legends accoun
 1. On first launch you set a master password that encrypts your vault.
 2. Add your League accounts (username, password, Riot ID, region).
 3. Stats are fetched automatically from op.gg — no API key required.
-4. Click the play button on any card to log in and launch the client.
+4. Click the play button on any card to sign in to the Riot Client and launch League.
+   To also queue for ranked, edit the account and set **After sign-in** and your two roles.
 
 ## Stack
 

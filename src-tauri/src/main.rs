@@ -93,6 +93,7 @@ fn main() {
             commands::clipboard::copy_password,
             commands::stats::refresh_stats,
             commands::launcher_cmd::launch_account,
+            commands::queue::queue_up,
             commands::lobby::get_lobby_view,
             commands::auto_accept::set_auto_accept_enabled,
             commands::auto_accept::get_auto_accept_status,

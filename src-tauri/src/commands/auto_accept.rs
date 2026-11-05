@@ -17,10 +17,10 @@ const LEAGUE_LOCKFILE_FALLBACKS: &[&str] = &[
 ];
 
 #[derive(Debug)]
-struct LcuLockfile {
-    port: u16,
-    password: String,
-    protocol: String,
+pub(crate) struct LcuLockfile {
+    pub(crate) port: u16,
+    pub(crate) password: String,
+    pub(crate) protocol: String,
 }
 
 struct AutoAcceptRuntime {
@@ -156,7 +156,7 @@ fn post_accept_ready_check(client: &reqwest::blocking::Client, lockfile: &LcuLoc
     matches!(res, Ok(r) if r.status().is_success())
 }
 
-fn auth_header(password: &str) -> String {
+pub(crate) fn auth_header(password: &str) -> String {
     let auth = STANDARD.encode(format!("riot:{password}"));
     format!("Basic {auth}")
 }
@@ -184,7 +184,7 @@ fn lcu_get_json(
 }
 
 #[cfg(target_os = "windows")]
-fn find_lockfile_path() -> Option<PathBuf> {
+pub(crate) fn find_lockfile_path() -> Option<PathBuf> {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
     if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Riot Games\League of Legends") {
         if let Ok(loc) = key.get_value::<String, _>("Location") {
@@ -204,11 +204,11 @@ fn find_lockfile_path() -> Option<PathBuf> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn find_lockfile_path() -> Option<PathBuf> {
+pub(crate) fn find_lockfile_path() -> Option<PathBuf> {
     None
 }
 
-fn read_lockfile(path: &PathBuf) -> Option<LcuLockfile> {
+pub(crate) fn read_lockfile(path: &PathBuf) -> Option<LcuLockfile> {
     let contents = std::fs::read_to_string(path).ok()?;
     let parts: Vec<&str> = contents.trim().split(':').collect();
     if parts.len() < 5 {

@@ -27,6 +27,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # Built into the app, masked. See src-tauri/build.rs.
+          RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
         with:
           tagName: v__VERSION__
           releaseName: 'VaultX v__VERSION__'

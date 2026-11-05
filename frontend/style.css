@@ -62,6 +62,9 @@ input, select {
 }
 input:hover, select:hover { border-color: var(--line-strong); }
 input:focus { outline: 0; border-color: var(--dim); }
+/* The browser adds its own show-password eye once something is typed. It reveals the
+   PIN and pushes the dots off center. */
+input::-ms-reveal, input::-ms-clear { display: none; }
 
 #app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
@@ -138,24 +141,47 @@ input:focus { outline: 0; border-color: var(--dim); }
   transition: border-color 0.12s;
 }
 .card:hover, .card:focus-within { border-color: var(--line-strong); }
-.card > :not(.card-stripes) { position: relative; }
+.card > :not(.card-art) { position: relative; }
 
-/* Decorative stripes at the angle of the VX mark, tinted by rank. Static: painted
-   once, so they cost nothing at idle. Never animate these. */
-.card-stripes, .login-stripes {
+/* The account's most-played champion, fading into the card. Static, and only ever
+   one small image per card. */
+.card-art {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  object-position: center 25%;
+  opacity: 0.24;
   pointer-events: none;
-  --stripe: rgba(255, 255, 255, 0.55);
-  background: repeating-linear-gradient(118deg, var(--stripe) 0 2px, transparent 2px 14px);
-  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
-  mask-image: linear-gradient(to bottom, #000, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 25%, transparent);
+  mask-image: linear-gradient(to bottom, #000 25%, transparent);
 }
-.card-stripes { --stripe: inherit; height: 84px; opacity: 0.22; }
-.login-stripes { height: 150px; opacity: 0.12; }
-.login-stripes ~ .bar, .login-stripes ~ .login { position: relative; }
+
+/* Text over the art: brighter than usual, with a shadow, so it reads on any champion. */
+.card-head .card-name, .card-head .link, .card-head .region, .card-head .stat-sub,
+.highlight .stat-label, .highlight-value, .highlight-sub {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+.card-head .link, .card-head .region, .card-head .stat-sub, .highlight .stat-label, .highlight-sub { color: #c8c8cc; }
+.card-head .link:hover { color: var(--ink); }
+.card-head .site { color: #c8c8cc; border-color: rgba(255, 255, 255, 0.22); background: rgba(0, 0, 0, 0.35); }
+.card-head .site:hover { color: var(--ink); border-color: rgba(255, 255, 255, 0.5); background: rgba(0, 0, 0, 0.55); }
+
+/* The X, huge and faded behind the PIN form. Static: painted once. */
+.login-mark {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 340px;
+  transform: translate(-50%, -50%);
+  opacity: 0.1;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(closest-side, #000 45%, transparent);
+  mask-image: radial-gradient(closest-side, #000 45%, transparent);
+}
+.login-mark ~ .bar, .login-mark ~ .login { position: relative; }
 
 .card-head { display: flex; align-items: center; gap: 12px; }
 .avatar {
@@ -180,11 +206,16 @@ input:focus { outline: 0; border-color: var(--dim); }
 .card .card-play:hover:not(:disabled) { background: #fff; color: #0e0e10; }
 .card .region { color: var(--dim); }
 
+.highlights { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
+.highlight { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.highlight-value { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.highlight-sub { color: var(--dim); font-size: 12px; font-weight: 400; }
 .queues { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .queue { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .queue-line { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
-.wr-track { display: block; height: 3px; margin: 2px 0; background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
-.wr-fill { display: block; height: 3px; background: var(--ink); border-radius: 2px; }
+/* Win rate: green for wins, red for losses. */
+.wr-track { display: block; height: 3px; margin: 2px 0; overflow: hidden; background: var(--danger); border-radius: 2px; }
+.wr-fill { display: block; height: 3px; background: var(--success); }
 .stat-label { color: var(--dim); font-size: 11px; }
 .stat-value { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stat-sub { color: var(--dim); font-size: 12px; white-space: nowrap; }
@@ -209,15 +240,13 @@ input:focus { outline: 0; border-color: var(--dim); }
 .game img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .game.is-win { border-color: var(--success); }
 .game.is-loss { border-color: var(--danger); }
-/* Dimmed so wins and losses differ by more than hue alone. */
-.game.is-loss img { opacity: 0.5; }
+/* Darkened so wins and losses differ by more than hue alone. A filter, not opacity:
+   see-through icons let the fallback letters behind them show. */
+.game.is-loss img { filter: brightness(0.5) saturate(0.7); }
 .streak { font-weight: 600; margin-right: 4px; }
-.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 2px; }
-.metric { min-width: 0; display: flex; flex-direction: column; padding: 7px 8px; background: var(--bg); border-radius: 6px; }
-.metric-value { font-size: 14px; font-weight: 600; }
 
 .card-champs { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
-.champ { display: grid; grid-template-columns: 26px minmax(0, 1fr) 28px 58px 36px; align-items: center; gap: 8px; font-size: 12px; }
+.champ { display: grid; grid-template-columns: 26px minmax(0, 1fr) 44px 36px; align-items: center; gap: 8px; font-size: 12px; }
 .champ-icon { position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--bg); border-radius: 5px; font-size: 10px; color: var(--dim); }
 .champ-icon img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .champ-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -225,8 +254,20 @@ input:focus { outline: 0; border-color: var(--dim); }
 .champ-cell.good { color: var(--success); }
 .champ-cell.bad { color: var(--danger); }
 
+.champs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.queue-switch { display: flex; gap: 2px; padding: 2px; background: var(--bg); border-radius: 6px; }
+.queue-switch button { height: 22px; padding: 0 8px; border-radius: 4px; color: var(--dim); font-size: 11px; }
+.queue-switch button:hover { color: var(--ink); }
+.queue-switch button.active { background: var(--raised); color: var(--ink); }
+
 .card-foot { display: flex; align-items: center; gap: 2px; margin: auto -6px -6px; padding-top: 2px; }
-.card-action { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; color: var(--dim); font-size: 12px; }
+.card-action { display: flex; align-items: center; gap: 6px; min-width: 0; height: 30px; padding: 0 8px; color: var(--dim); font-size: 12px; }
+.card-action span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Revealed values get a full row each, so long ones are never cut off. */
+.card.revealed .card-foot { flex-wrap: wrap; }
+.card.revealed .card-action { flex: 1 1 100%; height: auto; min-height: 28px; padding-block: 4px; color: var(--ink); text-align: left; }
+.card.revealed .card-action span { white-space: normal; overflow-wrap: anywhere; user-select: text; }
+.card-foot .icon-btn, .card-foot .toolbar-spacer { flex: none; }
 .card-action:hover { background: var(--hover); color: var(--ink); }
 .card-action.copied { color: var(--success); }
 
@@ -261,8 +302,11 @@ input:focus { outline: 0; border-color: var(--dim); }
 .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 
 .win { width: 42px; height: 36px; border-radius: 0; color: var(--dim); display: flex; align-items: center; justify-content: center; }
-.win:hover { background: var(--hover); color: var(--ink); }
-.win.close:hover { background: var(--danger); color: #fff; }
+/* Hover lights up the symbol itself, with no box behind it. */
+.win svg { transition: filter 0.12s; }
+.win:hover { color: var(--ink); }
+.win:hover svg { filter: drop-shadow(0 0 3px currentColor); }
+.win.close:hover { color: var(--danger); }
 
 /* Toolbar */
 .toolbar {
@@ -343,6 +387,19 @@ input:focus { outline: 0; border-color: var(--dim); }
 .link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .region { flex: none; color: var(--faint); font-size: 12px; }
 
+/* op.gg / u.gg buttons */
+.sites { display: flex; flex: none; gap: 4px; }
+.site {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 16px;
+}
+.site:hover { color: var(--ink); border-color: var(--line-strong); background: var(--hover); }
+.meta-line { align-items: center; margin-top: 3px; }
+
 .rank { display: flex; align-items: center; gap: 7px; }
 .tier-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
 .dim { color: var(--dim); }
@@ -369,8 +426,28 @@ input:focus { outline: 0; border-color: var(--dim); }
 .play:hover:not(:disabled) { background: var(--ink); color: #0e0e10; }
 
 /* Runs only while a request is in flight */
-.busy svg { animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.busy svg { display: none; }
+.busy::before { content: ""; }
+
+/* Loader adapted from Uiverse.io by MbaziiraRonald (MIT). A ring that morphs from
+   solid to dashed to dotted. Only rendered while something is loading. */
+.loader, .busy::before {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  background: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: loader-morph 0.8s linear infinite;
+}
+.loader { margin-right: 8px; }
+@keyframes loader-morph {
+  0%   { border: 2px solid rgb(255, 75, 75); border-top-color: transparent; border-left-color: transparent; transform: rotate(0deg); }
+  50%  { border: 2px dashed rgb(240, 41, 240); border-top-color: transparent; border-left-color: transparent; transform: rotate(270deg); }
+  100% { border: 2px dotted rgb(28, 228, 28); border-top-color: transparent; border-left-color: transparent; transform: rotate(360deg); }
+}
 
 .empty {
   display: flex;
@@ -464,13 +541,21 @@ input:focus { outline: 0; border-color: var(--dim); }
   gap: 14px;
   padding: 0 32px 28px;
 }
-.login-brand { align-items: center; margin-bottom: 8px; }
-.login > .login-brand { gap: 10px; }
-.login-logo { width: 56px; height: 56px; display: block; }
-.login-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.login-title { margin-bottom: 10px; color: var(--dim); font-size: 12px; font-weight: 600; letter-spacing: 0.32em; text-align: center; text-transform: uppercase; }
 .login > div { display: flex; flex-direction: column; gap: 10px; }
-.login input { height: 40px; border-radius: 8px; text-align: center; }
+.login input { height: 40px; border-radius: 8px; text-align: center; caret-color: transparent; }
 .login input::placeholder { color: var(--dim); }
+/* Dots: the skeleton and a typed PIN use the same spacing, and the extra left padding
+   cancels the gap letter-spacing leaves after the last dot, and the bottom padding lifts
+   the dot glyph, which sits low in the font, so both are dead center. */
+.login input:focus, .login input:not(:placeholder-shown) { letter-spacing: 0.3em; padding-left: calc(10px + 0.3em); padding-bottom: 4px; }
+.login input:focus::placeholder { color: var(--faint); }
+.pulse { animation: btn-pulse 0.35s ease-out; }
+@keyframes btn-pulse {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 rgba(237, 237, 239, 0.45); }
+  40%  { transform: scale(0.97); }
+  100% { transform: scale(1); box-shadow: 0 0 0 10px rgba(237, 237, 239, 0); }
+}
 .login .btn { height: 40px; border-radius: 8px; }
 .login .modal-actions { flex-direction: row; justify-content: center; margin-top: 0; }
 .login .modal-actions .btn { flex: 1; height: 34px; }

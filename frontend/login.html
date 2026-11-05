@@ -9,7 +9,7 @@
 </head>
 <body>
 
-  <div class="login-stripes hidden" id="login-stripes"></div>
+  <img class="login-mark hidden" id="login-mark" src="mark.svg" alt="">
   <div class="bar" data-tauri-drag-region>
     
     <div class="bar-spacer" data-tauri-drag-region></div>
@@ -18,10 +18,7 @@
   </div>
 
   <div class="login">
-    <div class="login-brand">
-      <img class="login-logo hidden" id="login-logo" src="icon.svg" alt="">
-      <h1 class="login-title">VaultX</h1>
-    </div>
+    <h1 class="login-title">VaultX</h1>
 
     <!-- First-time setup -->
     <div id="setup-section" class="hidden">
@@ -35,19 +32,19 @@
     <div id="unlock-section" class="hidden">
       <input type="password" id="unlock-password" placeholder="Enter your PIN" aria-label="PIN" autocomplete="current-password">
       <button class="btn primary" id="unlock-btn">Unlock</button>
-      <button class="btn-link" id="forgot-pin-btn">Forgot PIN?</button>
+      <button class="btn-link" id="forgot-pin-btn">Reset Vault</button>
 
       <div id="reset-confirm-box" class="hidden">
         <p class="error login-note">This permanently deletes all stored accounts.</p>
         <div class="modal-actions">
           <button class="btn" id="reset-cancel-btn">Cancel</button>
-          <button class="btn danger" id="reset-confirm-btn">Reset vault</button>
+          <button class="btn danger" id="reset-confirm-btn">Reset Vault</button>
         </div>
       </div>
     </div>
 
     <p id="login-error" class="error login-note hidden"></p>
-    <p id="login-loading" class="hint login-note hidden">Unlocking...</p>
+    <p id="login-loading" class="hint login-note hidden"><span class="loader"></span>Unlocking...</p>
   </div>
 
   <script>
@@ -64,12 +61,36 @@
       const exists = await invoke('vault_exists');
       if (exists) {
         document.getElementById('unlock-section').classList.remove('hidden');
-        document.getElementById('unlock-password').focus();
       } else {
         document.getElementById('setup-section').classList.remove('hidden');
-        document.getElementById('setup-password').focus();
       }
     }
+
+    // Clicking a field swaps its hint for a faint row of dots.
+    document.querySelectorAll('.login input').forEach(input => {
+      const hint = input.placeholder;
+      input.addEventListener('focus', () => { input.placeholder = '••••••••'; });
+      input.addEventListener('blur', () => { input.placeholder = hint; });
+    });
+
+    // A short pulse on Unlock. Restarted on every click, and it stops by itself.
+    const unlockBtn = document.getElementById('unlock-btn');
+    unlockBtn.addEventListener('click', () => {
+      unlockBtn.classList.remove('pulse');
+      void unlockBtn.offsetWidth;
+      unlockBtn.classList.add('pulse');
+    });
+    unlockBtn.addEventListener('animationend', () => unlockBtn.classList.remove('pulse'));
+
+    // Nothing is focused on load, so the hint stays visible until the field is
+    // clicked. Typing straight away still works: the first key focuses the field.
+    document.addEventListener('keydown', (e) => {
+      if (document.activeElement?.tagName === 'INPUT') return;
+      if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
+      const section = document.getElementById('unlock-section').classList.contains('hidden') ? 'setup-password' : 'unlock-password';
+      const input = document.getElementById(section);
+      if (!input.disabled) input.focus();
+    });
 
     function showError(msg) {
       const el = document.getElementById('login-error');
@@ -125,7 +146,7 @@
       }
     });
 
-    // ─── Forgot PIN ───────────────────────────────────────────────────────────
+    // ─── Reset Vault ──────────────────────────────────────────────────────────
     function showResetConfirm(show) {
       document.getElementById('reset-confirm-box').classList.toggle('hidden', !show);
       document.getElementById('forgot-pin-btn').classList.toggle('hidden', show);
@@ -171,11 +192,8 @@
       }
     }
 
-    // Low performance mode draws no images or stripes.
-    if (window.__VAULTX_LOW__ !== true) {
-      document.getElementById('login-stripes').classList.remove('hidden');
-      document.getElementById('login-logo').classList.remove('hidden');
-    }
+    // Low performance mode draws no images.
+    if (window.__VAULTX_LOW__ !== true) document.getElementById('login-mark').classList.remove('hidden');
     init();
     autoUpdate();
   </script>

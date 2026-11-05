@@ -1922,7 +1922,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lol-account-manager"
-version = "1.0.12"
+version = "1.0.13"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -1938,6 +1938,7 @@ dependencies = [
  "tauri-plugin-updater",
  "urlencoding",
  "uuid",
+ "windows",
  "windows-sys 0.61.2",
  "winreg 0.52.0",
 ]

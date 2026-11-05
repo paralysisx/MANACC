@@ -68,9 +68,6 @@ pub struct ChampionStat {
     pub games:    i64,
     #[serde(rename = "winRate")]
     pub win_rate: Option<f64>,
-    /// Only known from match data, so absent on op.gg stats.
-    #[serde(default)]
-    pub kda: Option<f64>,
 }
 
 /// One recent game, as shown in the match strip.
@@ -83,7 +80,7 @@ pub struct RecentMatch {
     pub assists:  i64,
 }
 
-/// Averages over recent ranked solo games. Only available from the Riot API.
+/// A summary of recent ranked solo games. Only available from the Riot API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentStats {
     pub games:  i64,
@@ -91,16 +88,6 @@ pub struct RecentStats {
     pub losses: i64,
     /// Newest game first.
     pub matches: Vec<RecentMatch>,
-    pub kills:   f64,
-    pub deaths:  f64,
-    pub assists: f64,
-    pub kda:     f64,
-    #[serde(rename = "csPerMin")]
-    pub cs_per_min: f64,
-    #[serde(rename = "damagePerMin")]
-    pub damage_per_min: f64,
-    #[serde(rename = "visionPerMin")]
-    pub vision_per_min: f64,
     #[serde(rename = "mainRole")]
     pub main_role: Option<String>,
     #[serde(rename = "mainRoleGames")]
@@ -121,6 +108,12 @@ pub struct SummonerStats {
     pub fetched_at:     String,
     #[serde(default)]
     pub recent:         Option<RecentStats>,
+    /// Season Flex totals. None means unknown, as opposed to no Flex games.
+    #[serde(rename = "flexChampions", default)]
+    pub flex_champions: Option<Vec<ChampionStat>>,
+    /// What top_champions covers: "season" from op.gg (Solo/Duo), "recent" from match history.
+    #[serde(rename = "championScope", default)]
+    pub champion_scope: String,
 }
 
 // ─── Main entry point ──────────────────────────────────────────────────────
@@ -135,16 +128,44 @@ pub fn scrape_profile(riot_id: &str, region: &str) -> Result<SummonerStats, Stri
     let tag_enc  = urlencoding::encode(tag_line);
     let profile_url = format!("https://www.op.gg/summoners/{slug}/{name_enc}-{tag_enc}");
 
+    let html = fetch_page(&profile_url, riot_id)?;
+    parse_from_html(&html, riot_id)
+}
+
+/// A queue on op.gg's champions page.
+#[derive(Clone, Copy)]
+pub enum ChampionQueue {
+    SoloDuo,
+    Flex,
+}
+
+/// This season's most-played champions in one queue.
+pub fn scrape_queue_champions(riot_id: &str, region: &str, queue: ChampionQueue) -> Result<Vec<ChampionStat>, String> {
+    let slug = region_slug(region).ok_or_else(|| format!("Unknown region: {region}"))?;
+    let (game_name, tag_line) = parse_riot_id(riot_id)?;
+    let queue_type = match queue {
+        ChampionQueue::SoloDuo => "SOLORANKED",
+        ChampionQueue::Flex => "FLEXRANKED",
+    };
+    let url = format!(
+        "https://www.op.gg/summoners/{slug}/{}-{}/champions?queue_type={queue_type}",
+        urlencoding::encode(game_name),
+        urlencoding::encode(tag_line),
+    );
+    parse_champion_table(&fetch_page(&url, riot_id)?)
+}
+
+fn fetch_page(url: &str, riot_id: &str) -> Result<String, String> {
     let client = reqwest::blocking::Client::builder()
         .cookie_store(true)
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
-    println!("[Scraper] Fetching: {profile_url}");
+    println!("[Scraper] Fetching: {url}");
 
     let response = client
-        .get(&profile_url)
+        .get(url)
         .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         .header("Accept-Language", "en-US,en;q=0.9")
         .header("sec-ch-ua", r#""Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99""#)
@@ -167,8 +188,63 @@ pub fn scrape_profile(riot_id: &str, region: &str) -> Result<SummonerStats, Stri
 
     let html = response.text().map_err(|e| format!("Failed to read response: {e}"))?;
     println!("[Scraper] HTML size: {} bytes", html.len());
+    Ok(html)
+}
 
-    parse_from_html(&html, riot_id)
+/// Reads the top rows of op.gg's champions table, most games first.
+///
+/// Each champion has a numbered row, followed by unnumbered "vs" rows for its
+/// matchups. Those must not count: "|3|Yone|4|W|1|L|" is a champion, but
+/// "|vs|Yone|4|W|1|L|" is a matchup under another champion.
+fn parse_champion_table(html: &str) -> Result<Vec<ChampionStat>, String> {
+    const TOP: usize = 5;
+
+    let Some(start) = html.find("All champions") else {
+        // A real page with no table means no games in this queue. Anything else
+        // (a Cloudflare page, say) must not read as "no games".
+        return if extract_meta_description(html).is_some() {
+            Ok(Vec::new())
+        } else {
+            Err("Could not read op.gg champions page".to_string())
+        };
+    };
+
+    // Walk the text between tags, keeping the last six pieces. The matchup rows sit
+    // in nested tables, so the walk can't stop at the first "</table>".
+    let mut champions = Vec::new();
+    let mut cells: Vec<String> = Vec::new();
+    let mut rest = &html[start..];
+    while let Some(open) = rest.find('<') {
+        let text = rest[..open].trim();
+        if !text.is_empty() {
+            cells.push(html_decode(text));
+            if cells.len() > 6 {
+                cells.remove(0);
+            }
+            if let [rank, name, wins, w, losses, l] = cells.as_slice() {
+                let next_rank = rank.parse::<usize>().ok() == Some(champions.len() + 1);
+                if next_rank && w == "W" && l == "L" {
+                    if let (Ok(wins), Ok(losses)) = (wins.parse::<i64>(), losses.parse::<i64>()) {
+                        let games = wins + losses;
+                        champions.push(ChampionStat {
+                            name: name.clone(),
+                            games,
+                            win_rate: (games > 0).then(|| wins as f64 / games as f64 * 100.0),
+                        });
+                        if champions.len() == TOP {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        // Inline scripts hold page data, not table cells.
+        let tag = &rest[open..];
+        let from = if tag.starts_with("<script") { tag.find("</script").unwrap_or(0) } else { 0 };
+        let Some(close) = tag[from..].find('>') else { break };
+        rest = &tag[from + close + 1..];
+    }
+    Ok(champions)
 }
 
 fn parse_from_html(html: &str, riot_id: &str) -> Result<SummonerStats, String> {
@@ -192,6 +268,8 @@ fn parse_from_html(html: &str, riot_id: &str) -> Result<SummonerStats, String> {
         top_champions,
         fetched_at: chrono_now(),
         recent: None,
+        flex_champions: None,
+        champion_scope: "season".to_string(),
     })
 }
 
@@ -304,7 +382,7 @@ fn parse_rank_from_description(description: &str) -> RankInfo {
     RankInfo { tier, division, lp, wins, losses, win_rate }
 }
 
-/// Parse top-3 champion stats from the og:description text.
+/// Parse top champion stats from the og:description text.
 /// Champion section format: "Yasuo - 4Win 7Lose Win rate 36%, Hwei - 6Win 1Lose Win rate 86%, ..."
 fn parse_champions_from_description(description: &str) -> Vec<ChampionStat> {
     // Champions appear after the third " / "
@@ -316,7 +394,7 @@ fn parse_champions_from_description(description: &str) -> Vec<ChampionStat> {
 
     champ_str
         .split(", ")
-        .take(3)
+        .take(5)
         .filter_map(|entry| {
             let (name_part, stats_part) = entry.split_once(" - ")?;
             let name   = name_part.trim().to_string();
@@ -328,7 +406,7 @@ fn parse_champions_from_description(description: &str) -> Vec<ChampionStat> {
             } else {
                 None
             };
-            Some(ChampionStat { name, games, win_rate, kda: None })
+            Some(ChampionStat { name, games, win_rate })
         })
         .collect()
 }
@@ -431,6 +509,71 @@ fn is_leap(y: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(rank: &str, name: &str, wins: u32, losses: u32) -> String {
+        format!(r#"<tr><td align="left">{rank}</td><td><div><img alt="{name}" src="x"/><strong>{name}</strong></div></td><td><div><span>{wins}<!-- -->W</span><span>{losses}<!-- -->L</span></div><span>50%</span></td></tr>"#)
+    }
+
+    fn table(rows: &[String]) -> String {
+        format!(r#"<meta property="og:description" content="A#B"><table><tr><td>All champions</td><td><span>9</span><span>W</span></td></tr>{}</table><p>1</p>"#, rows.join(""))
+    }
+
+    #[test]
+    fn reads_numbered_rows_and_skips_matchup_rows() {
+        let html = table(&[
+            row("1", "Yasuo", 31, 31),
+            row("vs", "Yone", 2, 1),
+            row("vs", "Jayce", 2, 0),
+            row("2", "Kai&#x27;Sa", 3, 1),
+        ]).replace("<!-- -->", "</span><span>");
+        let champs = parse_champion_table(&html).unwrap();
+        assert_eq!(champs.len(), 2);
+        assert_eq!((champs[0].name.as_str(), champs[0].games), ("Yasuo", 62));
+        assert_eq!(champs[0].win_rate, Some(50.0));
+        assert_eq!((champs[1].name.as_str(), champs[1].games), ("Kai'Sa", 4));
+    }
+
+    #[test]
+    fn later_champions_sit_after_nested_matchup_tables_and_scripts() {
+        let nested = format!(
+            r#"<tr><td><table>{}</table></td></tr><script>push("<td>2</td>Fake<span>9</span>W<span>9</span>L")</script>"#,
+            row("vs", "Yone", 2, 1)
+        );
+        let html = table(&[row("1", "Yasuo", 31, 31), nested, row("2", "Talon", 27, 20)]);
+        let champs = parse_champion_table(&html).unwrap();
+        assert_eq!(champs.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["Yasuo", "Talon"]);
+        assert_eq!(champs[1].games, 47);
+    }
+
+    /// Hits the live site: `cargo test -- --ignored live_opgg_queue --nocapture`
+    #[test]
+    #[ignore]
+    fn live_opgg_queue_champions() {
+        let solo = scrape_queue_champions("Hide on bush#KR1", "KR", ChampionQueue::SoloDuo).unwrap();
+        println!("{solo:#?}");
+        assert_eq!(solo.len(), 5);
+        assert!(solo.windows(2).all(|pair| pair[0].games >= pair[1].games));
+    }
+
+    #[test]
+    fn stops_at_five_champions() {
+        let rows: Vec<String> = (1..=8).map(|i| row(&i.to_string(), &format!("C{i}"), 2, 1)).collect();
+        let html = table(&rows).replace("<!-- -->", "</span><span>");
+        let champs = parse_champion_table(&html).unwrap();
+        assert_eq!(champs.len(), 5);
+        assert_eq!(champs[4].name, "C5");
+    }
+
+    #[test]
+    fn real_page_without_a_table_means_no_games() {
+        let html = r#"<meta property="og:description" content="A#B / Unranked">"#;
+        assert!(parse_champion_table(html).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unrecognised_page_is_an_error_not_no_games() {
+        assert!(parse_champion_table("<html>Just a moment...</html>").is_err());
+    }
 
     #[test]
     fn parses_divisional_rank_with_spaced_lp() {

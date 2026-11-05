@@ -11,8 +11,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-/// Ranked solo games looked at for top champions. Each one costs a request.
-const MATCH_COUNT: usize = 20;
+/// Ranked solo games shown on a card. Each one costs a request.
+const MATCH_COUNT: usize = 10;
+const TOP_CHAMPION_COUNT: usize = 5;
 const QUEUE_RANKED_SOLO: u32 = 420;
 /// Longest wait for a rate limit to clear (the longest limit window is 2 minutes).
 const MAX_RATE_LIMIT_WAIT_SECS: u64 = 125;
@@ -42,7 +43,23 @@ pub fn api_key() -> Option<String> {
         let path = std::path::Path::new(&dir).join("riot-api-key");
         return std::fs::read_to_string(path).ok().and_then(clean);
     }
-    None
+    baked_key()
+}
+
+mod baked {
+    include!(concat!(env!("OUT_DIR"), "/baked_key.rs"));
+}
+
+/// The key built into this copy, when the build machine provided one. See build.rs.
+fn baked_key() -> Option<String> {
+    let (masked, mask) = baked::KEY?;
+    // black_box keeps the compiler from working the key out and storing it as text.
+    unmask(std::hint::black_box(masked), std::hint::black_box(mask))
+}
+
+fn unmask(masked: &[u8], mask: &[u8]) -> Option<String> {
+    let bytes: Vec<u8> = masked.iter().zip(mask).map(|(byte, mask)| byte ^ mask).collect();
+    String::from_utf8(bytes).ok().filter(|key| !key.is_empty())
 }
 
 // ─── Routing ───────────────────────────────────────────────────────────────
@@ -104,10 +121,7 @@ struct Match {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct MatchInfo {
-    #[serde(default)]
-    game_duration: i64,
     participants: Vec<Participant>,
 }
 
@@ -126,14 +140,6 @@ struct Participant {
     #[serde(default)]
     assists: i64,
     #[serde(default)]
-    total_minions_killed: i64,
-    #[serde(default)]
-    neutral_minions_killed: i64,
-    #[serde(default)]
-    total_damage_dealt_to_champions: i64,
-    #[serde(default)]
-    vision_score: i64,
-    #[serde(default)]
     team_position: String,
 }
 
@@ -145,10 +151,6 @@ struct Game {
     kills: i64,
     deaths: i64,
     assists: i64,
-    cs: i64,
-    damage: i64,
-    vision: i64,
-    seconds: i64,
     role: String,
 }
 
@@ -250,7 +252,6 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
     let mut games = Vec::with_capacity(match_ids.len());
     for id in &match_ids {
         let game: Match = get(&format!("{cluster}/{}", urlencoding::encode(id)), key, "Match")?;
-        let seconds = game.info.game_duration;
         let me = game.info.participants.into_iter().find(|p| p.puuid == account.puuid);
         // Remakes aren't real games.
         if let Some(me) = me.filter(|p| !p.game_ended_in_early_surrender) {
@@ -260,10 +261,6 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
                 kills: me.kills,
                 deaths: me.deaths,
                 assists: me.assists,
-                cs: me.total_minions_killed + me.neutral_minions_killed,
-                damage: me.total_damage_dealt_to_champions,
-                vision: me.vision_score,
-                seconds,
                 role: me.team_position,
             });
         }
@@ -279,6 +276,8 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
         top_champions: top_champions(&games),
         fetched_at: scraper::chrono_now_pub(),
         recent: recent_stats(&games),
+        flex_champions: None,
+        champion_scope: "recent".to_string(),
     })
 }
 
@@ -305,19 +304,11 @@ fn rank_for(entries: &[LeagueEntry], queue: &str) -> RankInfo {
     }
 }
 
-fn kda_ratio(kills: i64, deaths: i64, assists: i64) -> f64 {
-    (kills + assists) as f64 / deaths.max(1) as f64
-}
-
-/// Averages across these games, or None if there are none.
+/// A summary of these games, or None if there are none.
 fn recent_stats(games: &[Game]) -> Option<RecentStats> {
     if games.is_empty() {
         return None;
     }
-    let count = games.len() as f64;
-    let sum = |f: fn(&Game) -> i64| games.iter().map(f).sum::<i64>();
-    let (kills, deaths, assists) = (sum(|g| g.kills), sum(|g| g.deaths), sum(|g| g.assists));
-    let minutes = (sum(|g| g.seconds) as f64 / 60.0).max(1.0);
     let wins = games.iter().filter(|g| g.win).count() as i64;
 
     let mut roles: HashMap<&str, i64> = HashMap::new();
@@ -340,30 +331,20 @@ fn recent_stats(games: &[Game]) -> Option<RecentStats> {
                 assists: g.assists,
             })
             .collect(),
-        kills: kills as f64 / count,
-        deaths: deaths as f64 / count,
-        assists: assists as f64 / count,
-        kda: kda_ratio(kills, deaths, assists),
-        cs_per_min: sum(|g| g.cs) as f64 / minutes,
-        damage_per_min: sum(|g| g.damage) as f64 / minutes,
-        vision_per_min: sum(|g| g.vision) as f64 / minutes,
         main_role: main_role.map(|(role, _)| role.to_string()),
         main_role_games: main_role.map_or(0, |(_, played)| played),
     })
 }
 
-/// The three most-played champions in these games, most games first.
+/// The most-played champions in these games, most games first.
 fn top_champions(games: &[Game]) -> Vec<ChampionStat> {
     #[derive(Default)]
-    struct Tally { played: i64, won: i64, kills: i64, deaths: i64, assists: i64 }
+    struct Tally { played: i64, won: i64 }
 
     let mut tallies: HashMap<&str, Tally> = HashMap::new();
     for game in games {
         let tally = tallies.entry(&game.champion).or_default();
         tally.played += 1;
-        tally.kills += game.kills;
-        tally.deaths += game.deaths;
-        tally.assists += game.assists;
         if game.win { tally.won += 1; }
     }
 
@@ -373,7 +354,6 @@ fn top_champions(games: &[Game]) -> Vec<ChampionStat> {
             name: display_name(champion).to_string(),
             games: t.played,
             win_rate: Some(t.won as f64 / t.played as f64 * 100.0),
-            kda: Some(kda_ratio(t.kills, t.deaths, t.assists)),
         })
         .collect();
     champions.sort_by(|a, b| {
@@ -381,7 +361,7 @@ fn top_champions(games: &[Game]) -> Vec<ChampionStat> {
             .then(b.win_rate.partial_cmp(&a.win_rate).unwrap_or(std::cmp::Ordering::Equal))
             .then(a.name.cmp(&b.name))
     });
-    champions.truncate(3);
+    champions.truncate(TOP_CHAMPION_COUNT);
     champions
 }
 
@@ -455,31 +435,34 @@ mod tests {
             game("Zed", true), game("Lux", false),
         ];
         let top = top_champions(&games);
-        assert_eq!(top.len(), 3);
+        assert_eq!(top.len(), 4);
         assert_eq!((top[0].name.as_str(), top[0].games), ("Wukong", 3));
         assert_eq!((top[1].name.as_str(), top[1].games), ("Ahri", 2));
         assert_eq!(top[1].win_rate, Some(50.0));
-        assert_eq!(top[1].kda, Some(5.0));
         assert_eq!(top[2].name, "Zed");
     }
 
     #[test]
-    fn recent_stats_averages_per_game_and_per_minute() {
+    fn keeps_only_the_top_five_champions() {
+        let game = |c: &str| Game { champion: c.to_string(), ..Game::default() };
+        let games: Vec<Game> = ["A", "A", "B", "C", "D", "E", "F", "G"].iter().map(|c| game(c)).collect();
+        let top = top_champions(&games);
+        assert_eq!(top.len(), 5);
+        assert_eq!((top[0].name.as_str(), top[0].games), ("A", 2));
+    }
+
+    #[test]
+    fn recent_stats_summarises_the_games() {
         let games = [
-            Game { champion: "MonkeyKing".into(), win: true, kills: 10, deaths: 2, assists: 6, cs: 200, damage: 30000, vision: 20, seconds: 1200, role: "MIDDLE".into(), ..Game::default() },
-            Game { win: false, kills: 2, deaths: 4, assists: 4, cs: 100, damage: 15000, vision: 10, seconds: 600, role: "MIDDLE".into(), ..Game::default() },
-            Game { win: true, kills: 0, deaths: 0, assists: 2, cs: 60, damage: 9000, vision: 6, seconds: 600, role: "TOP".into(), ..Game::default() },
+            Game { champion: "MonkeyKing".into(), win: true, kills: 10, deaths: 2, assists: 6, role: "MIDDLE".into() },
+            Game { champion: "Ahri".into(), win: false, kills: 2, deaths: 4, assists: 4, role: "MIDDLE".into() },
+            Game { champion: "Ahri".into(), win: true, kills: 0, deaths: 0, assists: 2, role: "TOP".into() },
         ];
         let r = recent_stats(&games).unwrap();
         assert_eq!((r.games, r.wins, r.losses), (3, 2, 1));
         assert_eq!(r.matches.iter().map(|m| m.win).collect::<Vec<_>>(), vec![true, false, true]);
         assert_eq!((r.matches[0].kills, r.matches[0].deaths, r.matches[0].assists), (10, 2, 6));
         assert_eq!(r.matches[0].champion, "Wukong");
-        assert_eq!((r.kills, r.deaths, r.assists), (4.0, 2.0, 4.0));
-        assert_eq!(r.kda, 4.0);
-        assert_eq!(r.cs_per_min, 9.0);
-        assert_eq!(r.damage_per_min, 1350.0);
-        assert_eq!(r.vision_per_min, 0.9);
         assert_eq!((r.main_role.as_deref(), r.main_role_games), (Some("MIDDLE"), 2));
     }
 
@@ -489,8 +472,21 @@ mod tests {
     }
 
     #[test]
-    fn deathless_kda_does_not_divide_by_zero() {
-        assert_eq!(kda_ratio(5, 0, 3), 8.0);
+    fn a_masked_key_is_restored() {
+        let key = "RGAPI-made-up";
+        let mask: Vec<u8> = (0..key.len() as u8).map(|i| i.wrapping_mul(37).wrapping_add(11)).collect();
+        let masked: Vec<u8> = key.bytes().zip(&mask).map(|(byte, mask)| byte ^ mask).collect();
+        assert_eq!(unmask(&masked, &mask).as_deref(), Some(key));
+        assert_eq!(unmask(&[], &[]), None);
+    }
+
+    /// Checks a build made with a key: build and run with RIOT_API_KEY set to a made-up
+    /// value and EXPECTED_BAKED_KEY set to the same, `cargo test -- --ignored baked`.
+    #[test]
+    #[ignore]
+    fn the_baked_key_is_the_one_given_at_build_time() {
+        let expected = std::env::var("EXPECTED_BAKED_KEY").expect("set EXPECTED_BAKED_KEY");
+        assert_eq!(baked_key().as_deref(), Some(expected.as_str()));
     }
 
     /// Hits the live API: set RIOT_API_KEY, then `cargo test -- --ignored live_riot --nocapture`
