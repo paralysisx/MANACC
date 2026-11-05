@@ -214,41 +214,93 @@ function avatarHTML(account, size) {
   const initial = esc((account.label || '?').charAt(0).toUpperCase());
   const iconUrl = account.stats?.iconUrl;
   const img = iconUrl ? `<img src="${esc(iconUrl)}" alt="">` : '';
-  return `<span class="avatar ${size}" style="border-color:${tierColor(account.stats?.solo)}">${initial}${img}</span>`;
+  const color = tierColor(account.stats?.solo);
+  const aura = isRanked(account.stats?.solo) ? ` has-aura` : '';
+  return `<span class="avatar ${size}${aura}" style="border-color:${color};--aura:${color}">${initial}${img}</span>`;
 }
 
-function statHTML(title, value, sub, color) {
-  const style = color ? ` style="color:${color}"` : '';
-  return `<div class="stat">
+const ROLE_NAMES = { TOP: 'Top', JUNGLE: 'Jungle', MIDDLE: 'Mid', BOTTOM: 'Bot', UTILITY: 'Support' };
+
+function fixed(value, digits = 1) {
+  return Number(value || 0).toFixed(digits);
+}
+
+function wrClass(pct) {
+  return pct >= 50 ? 'good' : 'bad';
+}
+
+function queueHTML(title, rank) {
+  const ranked = isRanked(rank);
+  const total = ranked ? rank.wins + rank.losses : 0;
+  const pct = total > 0 ? Math.round(rank.wins / total * 100) : null;
+  return `<div class="queue">
     <span class="stat-label">${title}</span>
-    <span class="stat-value"${style}>${esc(value)}</span>
-    <span class="stat-sub">${esc(sub)}</span>
+    <span class="stat-value" style="color:${ranked ? tierColor(rank) : 'var(--dim)'}">${esc(tierName(rank))}</span>
+    ${ranked ? `<span class="queue-line"><span>${esc(rank.lp)} LP · ${esc(rank.wins)}W ${esc(rank.losses)}L</span>${pct != null ? `<span class="${wrClass(pct)}">${pct}%</span>` : ''}</span>
+      <span class="wr-track"><span class="wr-fill" style="width:${pct ?? 0}%"></span></span>` : ''}
+  </div>`;
+}
+
+function metricHTML(label, value, title) {
+  return `<div class="metric" title="${esc(title)}">
+    <span class="metric-value">${esc(value)}</span>
+    <span class="stat-label">${label}</span>
+  </div>`;
+}
+
+function recentHTML(recent) {
+  if (!recent) return '';
+  const pct = recent.games > 0 ? Math.round(recent.wins / recent.games * 100) : 0;
+
+  const matches = recent.matches || [];
+  const latestWin = matches[0]?.win;
+  let streak = 0;
+  while (streak < matches.length && matches[streak].win === latestWin) streak++;
+  const streakText = streak >= 2 ? `${latestWin ? 'W' : 'L'}${streak}` : '';
+
+  // Stored newest first; drawn oldest to newest, so the latest game is on the right.
+  const games = [...matches].reverse().map(m => `
+    <span class="game ${m.win ? 'is-win' : 'is-loss'}" title="${esc(m.champion)}: ${m.win ? 'Win' : 'Loss'}, ${esc(m.kills)}/${esc(m.deaths)}/${esc(m.assists)}">
+      ${esc(m.champion.slice(0, 2))}<img src="${esc(champIconUrl(m.champion))}" alt="">
+    </span>`).join('');
+  const role = recent.mainRole && ROLE_NAMES[recent.mainRole]
+    ? `${ROLE_NAMES[recent.mainRole]} ${recent.mainRoleGames}/${recent.games}`
+    : '';
+
+  return `<div class="recent">
+    <div class="recent-head">
+      <span class="stat-label">Last ${esc(recent.games)} ranked${role ? ` · ${esc(role)}` : ''}</span>
+      <span class="recent-record">${streakText ? `<span class="streak ${latestWin ? 'good' : 'bad'}" title="Current ${latestWin ? 'win' : 'loss'} streak">${streakText}</span> ` : ''}${esc(recent.wins)}W ${esc(recent.losses)}L <span class="${wrClass(pct)}">${pct}%</span></span>
+    </div>
+    <div class="games" aria-label="Last ${esc(recent.games)} ranked games, oldest to newest: ${esc(recent.wins)} wins, ${esc(recent.losses)} losses">${games}</div>
+    <div class="metrics">
+      ${metricHTML('KDA', fixed(recent.kda), `${fixed(recent.kills)} / ${fixed(recent.deaths)} / ${fixed(recent.assists)} average kills / deaths / assists`)}
+      ${metricHTML('CS/min', fixed(recent.csPerMin), 'Creep score per minute')}
+      ${metricHTML('Dmg/min', Math.round(recent.damagePerMin), 'Damage to champions per minute')}
+      ${metricHTML('Vision/min', fixed(recent.visionPerMin, 2), 'Vision score per minute')}
+    </div>
+  </div>`;
+}
+
+function champRowHTML(c) {
+  const wr = c.winRate != null ? Math.round(c.winRate) : null;
+  return `<div class="champ" title="${esc(c.name)}">
+    <span class="champ-icon">${esc(c.name.slice(0, 2))}<img src="${esc(champIconUrl(c.name))}" alt=""></span>
+    <span class="champ-name">${esc(c.name)}</span>
+    <span class="champ-cell">${esc(c.games)}g</span>
+    <span class="champ-cell">${c.kda != null ? `${fixed(c.kda)} KDA` : ''}</span>
+    <span class="champ-cell ${wr != null ? wrClass(wr) : ''}">${wr != null ? `${wr}%` : '-'}</span>
   </div>`;
 }
 
 function buildCard(account) {
   const stats = account.stats;
   const solo = stats?.solo;
-  const flex = stats?.flex;
   const id = esc(account.id);
-  const hasWr = isRanked(solo) && solo.winRate != null;
   const champs = (stats?.topChampions || []).slice(0, 3);
   const updated = stats?.fetchedAt
     ? `Updated ${new Date(stats.fetchedAt).toLocaleString()}`
     : 'No stats yet';
-
-  const champHTML = champs.length
-    ? champs.map(c => {
-        const wr = c.winRate != null ? Math.round(c.winRate) : null;
-        return `<div class="champ" title="${esc(c.name)}, ${esc(c.games)} games">
-          <span class="champ-icon">${esc(c.name.slice(0, 2))}<img src="${esc(champIconUrl(c.name))}" alt=""></span>
-          <span class="champ-text">
-            <span class="champ-name">${esc(c.name)}</span>
-            <span class="${wr != null && wr >= 50 ? 'good' : 'bad'}">${wr != null ? `${wr}%` : '-'}</span>
-          </span>
-        </div>`;
-      }).join('')
-    : '<span class="hint">No stats yet. Refresh to fetch them.</span>';
 
   const card = document.createElement('article');
   card.className = 'card';
@@ -264,17 +316,23 @@ function buildCard(account) {
           <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
           <span class="region">${esc(account.region)}</span>
         </span>
+        ${stats?.summonerLevel != null ? `<span class="stat-sub">Level ${esc(stats.summonerLevel)}</span>` : ''}
       </div>
       <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.label)}" title="Open Riot Client">${ICONS.play}</button>
     </div>
 
-    <div class="card-stats" title="${esc(updated)}">
-      ${statHTML('Solo / Duo', tierName(solo), isRanked(solo) ? `${solo.lp} LP` : '', isRanked(solo) ? tierColor(solo) : 'var(--dim)')}
-      ${statHTML('Win rate', hasWr ? `${Math.round(solo.winRate)}%` : '-', hasWr ? `${solo.wins}W ${solo.losses}L` : '')}
-      ${statHTML('Flex', tierName(flex), isRanked(flex) ? `${flex.lp} LP` : '', isRanked(flex) ? tierColor(flex) : 'var(--dim)')}
+    <div class="queues" title="${esc(updated)}">
+      ${queueHTML('Solo / Duo', solo)}
+      ${queueHTML('Flex', stats?.flex)}
     </div>
 
-    <div class="card-champs">${champHTML}</div>
+    ${recentHTML(stats?.recent)}
+
+    ${champs.length
+      ? `<div class="card-champs">${champs.map(champRowHTML).join('')}</div>`
+      : ''}
+
+    ${!stats?.recent ? `<span class="hint">${stats ? 'Refresh for recent-game analytics.' : 'No stats yet. Refresh to fetch them.'}</span>` : ''}
 
     <div class="card-foot">
       <button class="card-action js-copy-user" data-id="${id}" title="Copy username">${ICONS.user}<span>Username</span></button>
@@ -340,7 +398,8 @@ appRoot.addEventListener('click', async (e) => {
   } else if (btn.classList.contains('js-edit')) {
     openEditModal(id);
   } else if (btn.classList.contains('js-refresh')) {
-    await handleRefreshAccount(id);
+    const result = await refreshAccount(id);
+    if (!result.ok) showToast(result.error || 'Failed to fetch stats', 'error');
   } else if (btn.classList.contains('js-copy-user')) {
     const acc = allAccounts.find(a => a.id === id);
     if (!acc) return;
@@ -384,7 +443,8 @@ async function handleLaunchAccount(id, btn) {
   }
 }
 
-async function handleRefreshAccount(id) {
+/** Refreshes one account and redraws it in place. Never throws. */
+async function refreshAccount(id) {
   const row = accountList.querySelector(`[data-row="${id}"]`);
   const btn = row?.querySelector('.js-refresh');
   if (btn) { btn.disabled = true; btn.classList.add('busy'); }
@@ -394,11 +454,12 @@ async function handleRefreshAccount(id) {
     const acc = allAccounts.find(a => a.id === id);
     if (acc) {
       acc.stats = stats;
-      row?.replaceWith(buildAccount(acc));
+      accountList.querySelector(`[data-row="${id}"]`)?.replaceWith(buildAccount(acc));
     }
+    return { ok: true };
   } catch (err) {
     if (btn) { btn.disabled = false; btn.classList.remove('busy'); }
-    showToast(String(err) || 'Failed to fetch stats', 'error');
+    return { ok: false, error: String(err) };
   }
 }
 
@@ -527,28 +588,78 @@ sortSelect.addEventListener('change', async () => {
 });
 
 // ─── Refresh all ──────────────────────────────────────────────────────────────
-refreshAllBtn.addEventListener('click', async () => {
-  if (allAccounts.length === 0) return;
+// Runs once on opening and whenever the user asks. Sitting idle never triggers it:
+// after a while the app only offers a refresh and waits for an answer.
+const STALE_PROMPT_MS = 60 * 60 * 1000;
+let refreshingAll = false;
+let lastRefreshAt = Date.now();
+let staleTimer = null;
+
+refreshAllBtn.addEventListener('click', refreshAllAccounts);
+
+async function refreshAllAccounts() {
+  if (refreshingAll || allAccounts.length === 0) return;
+  refreshingAll = true;
+  hideStalePrompt();
   refreshAllBtn.disabled = true;
   if (LOW) refreshAllBtn.textContent = 'Refreshing...';
   else refreshAllBtn.classList.add('busy');
 
-  try {
-    const results = await invoke('refresh_all');
-    await renderAccounts();
-    const failed = results.filter(r => !r.success).length;
-    const ok = results.length - failed;
-    if (failed === 0)  showToast(`${ok} updated.`, 'success');
-    else if (ok === 0) showToast('All refreshes failed. Check the Riot IDs and regions.', 'error');
-    else               showToast(`${ok} updated, ${failed} failed.`);
-  } catch (err) {
-    showToast(String(err) || 'Refresh failed', 'error');
-  } finally {
-    refreshAllBtn.disabled = false;
-    if (LOW) refreshAllBtn.textContent = 'Refresh all';
-    else refreshAllBtn.classList.remove('busy');
+  const ids = sortedAccounts.map(a => a.id);
+  let failed = 0;
+  for (let i = 0; i < ids.length; i++) {
+    setProgressToast(`Refreshing ${i + 1} of ${ids.length}...`);
+    const result = await refreshAccount(ids[i]);
+    if (!result.ok) failed++;
   }
-});
+
+  setProgressToast(null);
+  sortAccounts();
+  renderList();
+  refreshingAll = false;
+  refreshAllBtn.disabled = false;
+  if (LOW) refreshAllBtn.textContent = 'Refresh all';
+  else refreshAllBtn.classList.remove('busy');
+
+  const ok = ids.length - failed;
+  if (failed === 0)  showToast(`${ok} updated.`, 'success');
+  else if (ok === 0) showToast('All refreshes failed. Check the Riot IDs and regions.', 'error');
+  else               showToast(`${ok} updated, ${failed} failed.`);
+
+  lastRefreshAt = Date.now();
+  scheduleStalePrompt(STALE_PROMPT_MS);
+}
+
+function scheduleStalePrompt(delay) {
+  clearTimeout(staleTimer);
+  staleTimer = setTimeout(() => {
+    showStalePrompt();
+    scheduleStalePrompt(STALE_PROMPT_MS); // Keeps the hours current, or asks again after "Not now".
+  }, delay);
+}
+
+function showStalePrompt() {
+  if (refreshingAll || allAccounts.length === 0) return;
+  const hours = Math.max(1, Math.floor((Date.now() - lastRefreshAt) / (60 * 60 * 1000)));
+  let prompt = document.getElementById('stale-prompt');
+  if (!prompt) {
+    prompt = document.createElement('div');
+    prompt.id = 'stale-prompt';
+    prompt.className = 'toast prompt';
+    prompt.innerHTML = `
+      <span id="stale-text"></span>
+      <button class="btn primary" id="stale-refresh-btn">Refresh</button>
+      <button class="btn" id="stale-dismiss-btn">Not now</button>`;
+    toastContainer.appendChild(prompt);
+    document.getElementById('stale-refresh-btn').addEventListener('click', refreshAllAccounts);
+    document.getElementById('stale-dismiss-btn').addEventListener('click', hideStalePrompt);
+  }
+  document.getElementById('stale-text').textContent = `Stats are ${hours} ${hours === 1 ? 'hour' : 'hours'} outdated.`;
+}
+
+function hideStalePrompt() {
+  document.getElementById('stale-prompt')?.remove();
+}
 
 // ─── Add / Edit ───────────────────────────────────────────────────────────────
 document.getElementById('add-account-btn').addEventListener('click', openAddModal);
@@ -629,7 +740,9 @@ async function handleModalSave() {
       const newId = await invoke('add_account', { account: { label, username, password, riotId, region } });
       closeModal();
       await renderAccounts();
-      handleRefreshAccount(newId);
+      refreshAccount(newId).then(result => {
+        if (!result.ok) showToast(result.error || 'Failed to fetch stats', 'error');
+      });
     }
   } catch (err) {
     showModalError(String(err) || 'Failed to save.');
@@ -752,7 +865,7 @@ async function handleLock() {
     if (await appWindow.isMaximized()) await appWindow.toggleMaximize();
     await appWindow.setResizable(false);
     await appWindow.setMinSize(null);
-    await appWindow.setSize(new LogicalSize(360, 340));
+    await appWindow.setSize(new LogicalSize(360, 400));
     window.location.href = 'login.html';
   } catch (err) {
     showToast(String(err), 'error');
@@ -760,8 +873,21 @@ async function handleLock() {
 }
 
 // ─── Toasts ───────────────────────────────────────────────────────────────────
+/** A toast that stays until replaced; null removes it. */
+function setProgressToast(message) {
+  let toast = document.getElementById('progress-toast');
+  if (message == null) { toast?.remove(); return; }
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'progress-toast';
+    toast.className = 'toast';
+    toastContainer.appendChild(toast);
+  }
+  toast.textContent = message;
+}
+
 function showToast(message, type = 'info', duration = type === 'error' ? 6000 : 3000) {
-  const toasts = toastContainer.querySelectorAll('.toast');
+  const toasts = toastContainer.querySelectorAll('.toast:not(#progress-toast):not(#stale-prompt)');
   if (toasts.length >= 3) toasts[0].remove();
 
   const toast = document.createElement('div');
@@ -775,6 +901,7 @@ function showToast(message, type = 'info', duration = type === 'error' ? 6000 : 
 (async () => {
   if (!LOW) await initDataDragonVersion();
   await renderAccounts();
+  refreshAllAccounts();
   if (autoCheckUpdates) {
     runAutoUpdate();
     setInterval(runAutoUpdate, AUTO_UPDATE_INTERVAL_MS);

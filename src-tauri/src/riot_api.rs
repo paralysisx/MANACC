@@ -3,7 +3,7 @@
 /// The key is read at runtime and never compiled in: Riot's policy forbids shipping
 /// it in a binary, so a public release needs a small server to hold it instead.
 
-use crate::scraper::{self, ChampionStat, RankInfo, SummonerStats};
+use crate::scraper::{self, ChampionStat, RankInfo, RecentMatch, RecentStats, SummonerStats};
 use reqwest::blocking::Client;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -104,7 +104,10 @@ struct Match {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MatchInfo {
+    #[serde(default)]
+    game_duration: i64,
     participants: Vec<Participant>,
 }
 
@@ -116,6 +119,37 @@ struct Participant {
     win: bool,
     #[serde(default)]
     game_ended_in_early_surrender: bool,
+    #[serde(default)]
+    kills: i64,
+    #[serde(default)]
+    deaths: i64,
+    #[serde(default)]
+    assists: i64,
+    #[serde(default)]
+    total_minions_killed: i64,
+    #[serde(default)]
+    neutral_minions_killed: i64,
+    #[serde(default)]
+    total_damage_dealt_to_champions: i64,
+    #[serde(default)]
+    vision_score: i64,
+    #[serde(default)]
+    team_position: String,
+}
+
+/// One player's line from one game.
+#[derive(Debug, Clone, Default)]
+struct Game {
+    champion: String,
+    win: bool,
+    kills: i64,
+    deaths: i64,
+    assists: i64,
+    cs: i64,
+    damage: i64,
+    vision: i64,
+    seconds: i64,
+    role: String,
 }
 
 // ─── Requests ──────────────────────────────────────────────────────────────
@@ -216,10 +250,22 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
     let mut games = Vec::with_capacity(match_ids.len());
     for id in &match_ids {
         let game: Match = get(&format!("{cluster}/{}", urlencoding::encode(id)), key, "Match")?;
+        let seconds = game.info.game_duration;
         let me = game.info.participants.into_iter().find(|p| p.puuid == account.puuid);
         // Remakes aren't real games.
         if let Some(me) = me.filter(|p| !p.game_ended_in_early_surrender) {
-            games.push((me.champion_name, me.win));
+            games.push(Game {
+                champion: me.champion_name,
+                win: me.win,
+                kills: me.kills,
+                deaths: me.deaths,
+                assists: me.assists,
+                cs: me.total_minions_killed + me.neutral_minions_killed,
+                damage: me.total_damage_dealt_to_champions,
+                vision: me.vision_score,
+                seconds,
+                role: me.team_position,
+            });
         }
     }
 
@@ -232,6 +278,7 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
         flex: rank_for(&entries, "RANKED_FLEX_SR"),
         top_champions: top_champions(&games),
         fetched_at: scraper::chrono_now_pub(),
+        recent: recent_stats(&games),
     })
 }
 
@@ -258,21 +305,75 @@ fn rank_for(entries: &[LeagueEntry], queue: &str) -> RankInfo {
     }
 }
 
+fn kda_ratio(kills: i64, deaths: i64, assists: i64) -> f64 {
+    (kills + assists) as f64 / deaths.max(1) as f64
+}
+
+/// Averages across these games, or None if there are none.
+fn recent_stats(games: &[Game]) -> Option<RecentStats> {
+    if games.is_empty() {
+        return None;
+    }
+    let count = games.len() as f64;
+    let sum = |f: fn(&Game) -> i64| games.iter().map(f).sum::<i64>();
+    let (kills, deaths, assists) = (sum(|g| g.kills), sum(|g| g.deaths), sum(|g| g.assists));
+    let minutes = (sum(|g| g.seconds) as f64 / 60.0).max(1.0);
+    let wins = games.iter().filter(|g| g.win).count() as i64;
+
+    let mut roles: HashMap<&str, i64> = HashMap::new();
+    for game in games.iter().filter(|g| !g.role.is_empty()) {
+        *roles.entry(game.role.as_str()).or_default() += 1;
+    }
+    let main_role = roles.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(a.0)));
+
+    Some(RecentStats {
+        games: games.len() as i64,
+        wins,
+        losses: games.len() as i64 - wins,
+        matches: games
+            .iter()
+            .map(|g| RecentMatch {
+                champion: display_name(&g.champion).to_string(),
+                win: g.win,
+                kills: g.kills,
+                deaths: g.deaths,
+                assists: g.assists,
+            })
+            .collect(),
+        kills: kills as f64 / count,
+        deaths: deaths as f64 / count,
+        assists: assists as f64 / count,
+        kda: kda_ratio(kills, deaths, assists),
+        cs_per_min: sum(|g| g.cs) as f64 / minutes,
+        damage_per_min: sum(|g| g.damage) as f64 / minutes,
+        vision_per_min: sum(|g| g.vision) as f64 / minutes,
+        main_role: main_role.map(|(role, _)| role.to_string()),
+        main_role_games: main_role.map_or(0, |(_, played)| played),
+    })
+}
+
 /// The three most-played champions in these games, most games first.
-fn top_champions(games: &[(String, bool)]) -> Vec<ChampionStat> {
-    let mut counts: HashMap<&str, (i64, i64)> = HashMap::new();
-    for (champion, won) in games {
-        let entry = counts.entry(champion).or_default();
-        entry.0 += 1;
-        if *won { entry.1 += 1; }
+fn top_champions(games: &[Game]) -> Vec<ChampionStat> {
+    #[derive(Default)]
+    struct Tally { played: i64, won: i64, kills: i64, deaths: i64, assists: i64 }
+
+    let mut tallies: HashMap<&str, Tally> = HashMap::new();
+    for game in games {
+        let tally = tallies.entry(&game.champion).or_default();
+        tally.played += 1;
+        tally.kills += game.kills;
+        tally.deaths += game.deaths;
+        tally.assists += game.assists;
+        if game.win { tally.won += 1; }
     }
 
-    let mut champions: Vec<ChampionStat> = counts
+    let mut champions: Vec<ChampionStat> = tallies
         .into_iter()
-        .map(|(champion, (played, won))| ChampionStat {
+        .map(|(champion, t)| ChampionStat {
             name: display_name(champion).to_string(),
-            games: played,
-            win_rate: Some(won as f64 / played as f64 * 100.0),
+            games: t.played,
+            win_rate: Some(t.won as f64 / t.played as f64 * 100.0),
+            kda: Some(kda_ratio(t.kills, t.deaths, t.assists)),
         })
         .collect();
     champions.sort_by(|a, b| {
@@ -347,7 +448,7 @@ mod tests {
 
     #[test]
     fn top_champions_sorted_by_games_with_win_rates() {
-        let game = |c: &str, w| (c.to_string(), w);
+        let game = |c: &str, win| Game { champion: c.to_string(), win, kills: 4, deaths: 2, assists: 6, ..Game::default() };
         let games = [
             game("Ahri", true), game("Ahri", false),
             game("MonkeyKing", true), game("MonkeyKing", true), game("MonkeyKing", false),
@@ -358,7 +459,38 @@ mod tests {
         assert_eq!((top[0].name.as_str(), top[0].games), ("Wukong", 3));
         assert_eq!((top[1].name.as_str(), top[1].games), ("Ahri", 2));
         assert_eq!(top[1].win_rate, Some(50.0));
+        assert_eq!(top[1].kda, Some(5.0));
         assert_eq!(top[2].name, "Zed");
+    }
+
+    #[test]
+    fn recent_stats_averages_per_game_and_per_minute() {
+        let games = [
+            Game { champion: "MonkeyKing".into(), win: true, kills: 10, deaths: 2, assists: 6, cs: 200, damage: 30000, vision: 20, seconds: 1200, role: "MIDDLE".into(), ..Game::default() },
+            Game { win: false, kills: 2, deaths: 4, assists: 4, cs: 100, damage: 15000, vision: 10, seconds: 600, role: "MIDDLE".into(), ..Game::default() },
+            Game { win: true, kills: 0, deaths: 0, assists: 2, cs: 60, damage: 9000, vision: 6, seconds: 600, role: "TOP".into(), ..Game::default() },
+        ];
+        let r = recent_stats(&games).unwrap();
+        assert_eq!((r.games, r.wins, r.losses), (3, 2, 1));
+        assert_eq!(r.matches.iter().map(|m| m.win).collect::<Vec<_>>(), vec![true, false, true]);
+        assert_eq!((r.matches[0].kills, r.matches[0].deaths, r.matches[0].assists), (10, 2, 6));
+        assert_eq!(r.matches[0].champion, "Wukong");
+        assert_eq!((r.kills, r.deaths, r.assists), (4.0, 2.0, 4.0));
+        assert_eq!(r.kda, 4.0);
+        assert_eq!(r.cs_per_min, 9.0);
+        assert_eq!(r.damage_per_min, 1350.0);
+        assert_eq!(r.vision_per_min, 0.9);
+        assert_eq!((r.main_role.as_deref(), r.main_role_games), (Some("MIDDLE"), 2));
+    }
+
+    #[test]
+    fn no_games_means_no_recent_stats() {
+        assert!(recent_stats(&[]).is_none());
+    }
+
+    #[test]
+    fn deathless_kda_does_not_divide_by_zero() {
+        assert_eq!(kda_ratio(5, 0, 3), 8.0);
     }
 
     /// Hits the live API: set RIOT_API_KEY, then `cargo test -- --ignored live_riot --nocapture`

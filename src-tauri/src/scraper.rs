@@ -68,6 +68,43 @@ pub struct ChampionStat {
     pub games:    i64,
     #[serde(rename = "winRate")]
     pub win_rate: Option<f64>,
+    /// Only known from match data, so absent on op.gg stats.
+    #[serde(default)]
+    pub kda: Option<f64>,
+}
+
+/// One recent game, as shown in the match strip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentMatch {
+    pub champion: String,
+    pub win:      bool,
+    pub kills:    i64,
+    pub deaths:   i64,
+    pub assists:  i64,
+}
+
+/// Averages over recent ranked solo games. Only available from the Riot API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentStats {
+    pub games:  i64,
+    pub wins:   i64,
+    pub losses: i64,
+    /// Newest game first.
+    pub matches: Vec<RecentMatch>,
+    pub kills:   f64,
+    pub deaths:  f64,
+    pub assists: f64,
+    pub kda:     f64,
+    #[serde(rename = "csPerMin")]
+    pub cs_per_min: f64,
+    #[serde(rename = "damagePerMin")]
+    pub damage_per_min: f64,
+    #[serde(rename = "visionPerMin")]
+    pub vision_per_min: f64,
+    #[serde(rename = "mainRole")]
+    pub main_role: Option<String>,
+    #[serde(rename = "mainRoleGames")]
+    pub main_role_games: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +119,8 @@ pub struct SummonerStats {
     pub top_champions:  Vec<ChampionStat>,
     #[serde(rename = "fetchedAt")]
     pub fetched_at:     String,
+    #[serde(default)]
+    pub recent:         Option<RecentStats>,
 }
 
 // ─── Main entry point ──────────────────────────────────────────────────────
@@ -152,6 +191,7 @@ fn parse_from_html(html: &str, riot_id: &str) -> Result<SummonerStats, String> {
         flex: RankInfo::unranked(),
         top_champions,
         fetched_at: chrono_now(),
+        recent: None,
     })
 }
 
@@ -288,7 +328,7 @@ fn parse_champions_from_description(description: &str) -> Vec<ChampionStat> {
             } else {
                 None
             };
-            Some(ChampionStat { name, games, win_rate })
+            Some(ChampionStat { name, games, win_rate, kda: None })
         })
         .collect()
 }

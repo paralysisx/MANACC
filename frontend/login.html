@@ -18,30 +18,27 @@
   </div>
 
   <div class="login">
-    <div class="login-title">VaultX</div>
+    <div class="login-brand">
+      <img class="login-logo hidden" id="login-logo" src="icon.svg" alt="">
+      <h1 class="login-title">VaultX</h1>
+    </div>
 
     <!-- First-time setup -->
     <div id="setup-section" class="hidden">
-      <label class="field">Choose a PIN (6+ characters)
-        <input type="password" id="setup-password" autocomplete="new-password">
-      </label>
-      <label class="field">Repeat PIN
-        <input type="password" id="setup-confirm" autocomplete="new-password">
-      </label>
-      <p class="hint">Forgotten PINs can't be recovered.</p>
+      <input type="password" id="setup-password" placeholder="Choose a PIN (6+ characters)" aria-label="Choose a PIN" autocomplete="new-password">
+      <input type="password" id="setup-confirm" placeholder="Repeat PIN" aria-label="Repeat PIN" autocomplete="new-password">
       <button class="btn primary" id="setup-btn">Create vault</button>
+      <p class="hint login-note">A forgotten PIN can't be recovered.</p>
     </div>
 
     <!-- Unlock existing vault -->
     <div id="unlock-section" class="hidden">
-      <label class="field">PIN
-        <input type="password" id="unlock-password" autocomplete="current-password">
-      </label>
+      <input type="password" id="unlock-password" placeholder="Enter your PIN" aria-label="PIN" autocomplete="current-password">
       <button class="btn primary" id="unlock-btn">Unlock</button>
       <button class="btn-link" id="forgot-pin-btn">Forgot PIN?</button>
 
       <div id="reset-confirm-box" class="hidden">
-        <p class="error">This permanently deletes all stored accounts.</p>
+        <p class="error login-note">This permanently deletes all stored accounts.</p>
         <div class="modal-actions">
           <button class="btn" id="reset-cancel-btn">Cancel</button>
           <button class="btn danger" id="reset-confirm-btn">Reset vault</button>
@@ -49,8 +46,8 @@
       </div>
     </div>
 
-    <p id="login-error" class="error hidden"></p>
-    <p id="login-loading" class="hint hidden">Unlocking...</p>
+    <p id="login-error" class="error login-note hidden"></p>
+    <p id="login-loading" class="hint login-note hidden">Unlocking...</p>
   </div>
 
   <script>
@@ -174,7 +171,11 @@
       }
     }
 
-    if (window.__VAULTX_LOW__ !== true) document.getElementById('login-stripes').classList.remove('hidden');
+    // Low performance mode draws no images or stripes.
+    if (window.__VAULTX_LOW__ !== true) {
+      document.getElementById('login-stripes').classList.remove('hidden');
+      document.getElementById('login-logo').classList.remove('hidden');
+    }
     init();
     autoUpdate();
   </script>

@@ -24,7 +24,7 @@ pub fn unlock(
     state: State<'_, Mutex<SessionState>>,
 ) -> Result<(), String> {
     let (key, salt, vault) = storage::open_vault(&password)
-        .map_err(|_| "Incorrect password or corrupted vault.".to_string())?;
+        .map_err(|_| "Incorrect PIN.".to_string())?;
     state.lock().unwrap().set(key, salt, vault);
     Ok(())
 }

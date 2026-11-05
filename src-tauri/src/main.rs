@@ -92,7 +92,6 @@ fn main() {
             commands::clipboard::write_text,
             commands::clipboard::copy_password,
             commands::stats::refresh_stats,
-            commands::stats::refresh_all,
             commands::launcher_cmd::launch_account,
             commands::lobby::get_lobby_view,
             commands::auto_accept::set_auto_accept_enabled,
