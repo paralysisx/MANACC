@@ -76,6 +76,8 @@ fn main() {
             let window = window.build()?;
             #[cfg(target_os = "windows")]
             window_icon::apply(&window);
+            #[cfg(target_os = "windows")]
+            window_icon::refresh_after_update(&app.package_info().version.to_string());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
