@@ -1494,30 +1494,15 @@ async function runUpdateCheck(silent = false) {
 }
 
 checkUpdatesBtn.addEventListener('click', () => runUpdateCheck(false));
-installUpdateBtn.addEventListener('click', installPendingUpdate);
+installUpdateBtn.addEventListener('click', () => window.VaultXUpdate.offer(pendingUpdate, true));
 
+/**
+ * On opening, and now and then in a session left open: a newer version is offered in a
+ * popup. Nothing is installed until the user presses Update now.
+ */
 async function runAutoUpdate() {
   await runUpdateCheck(true);
-  if (pendingUpdate) {
-    showToast(`Updating VaultX to ${pendingUpdate.version}...`);
-    await installPendingUpdate();
-  }
-}
-
-async function installPendingUpdate() {
-  if (!pendingUpdate) return;
-  installUpdateBtn.disabled = true;
-  updateStatusEl.innerHTML = `${LOADER}Downloading update...`;
-  try {
-    await pendingUpdate.downloadAndInstall();
-    // The installer normally restarts the app before this line runs.
-    updateStatusEl.textContent = 'Update installed. Please restart the app.';
-  } catch (err) {
-    updateStatusEl.textContent = 'Update failed.';
-    showToast(String(err) || 'Update install failed', 'error');
-  } finally {
-    installUpdateBtn.disabled = false;
-  }
+  if (pendingUpdate) window.VaultXUpdate.offer(pendingUpdate);
 }
 
 // ─── Lock ─────────────────────────────────────────────────────────────────────

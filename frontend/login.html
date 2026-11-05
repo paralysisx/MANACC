@@ -61,7 +61,9 @@
     <p id="login-loading" class="hint login-note hidden"><span class="loader"></span>Unlocking...</p>
   </div>
 
+  <script src="update.js"></script>
   <script>
+    // (update.js, loaded just above, offers new versions in a popup.)
     // ─── Tauri IPC ────────────────────────────────────────────────────────────
     const { invoke } = window.__TAURI__.core;
     const { getCurrentWindow } = window.__TAURI__.window;
@@ -236,22 +238,14 @@
       if (e.key === 'Enter') document.getElementById('setup-btn').click();
     });
 
-    // ─── Auto update ──────────────────────────────────────────────────────────
-    // Runs before unlock so an update's restart doesn't throw away an open session.
-    async function autoUpdate() {
-      if (localStorage.getItem('autoCheckUpdates') === 'false') return;
-      try {
-        const update = await window.__TAURI__.updater.check();
-        if (update) await update.downloadAndInstall();
-      } catch (err) {
-        console.warn('Auto-update failed:', err);
-      }
-    }
+    // ─── Updates ──────────────────────────────────────────────────────────────
+    // A newer version is offered here, before unlock, so its restart doesn't throw
+    // away an open session. Nothing installs until the user says so.
 
     // Low performance mode draws no images.
     if (window.__VAULTX_LOW__ !== true) document.getElementById('login-mark').classList.remove('hidden');
     init();
-    autoUpdate();
+    window.VaultXUpdate.check();
   </script>
 </body>
 </html>

@@ -545,6 +545,12 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   border-radius: 10px;
 }
 .modal.wide { width: 460px; }
+.modal::-webkit-scrollbar { width: 8px; }
+.modal::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.modal::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
+/* The update popup also has to fit the small PIN screen. */
+.update-modal { max-width: 100%; }
+.update-modal #update-versions { font-size: 13px; }
 .modal h3 { font-size: 15px; font-weight: 600; }
 .modal input, .modal select { background: var(--bg); }
 
