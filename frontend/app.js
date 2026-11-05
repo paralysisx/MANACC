@@ -85,6 +85,18 @@ function capitalise(str) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
 }
 
+/** An account is known by its Riot ID: the name, and the tag after the #. */
+function riotIdParts(account) {
+  const riotId = String(account?.riotId || '');
+  const at = riotId.lastIndexOf('#');
+  const name = (at > 0 ? riotId.slice(0, at) : riotId).trim();
+  return { name: name || account?.label || 'Account', tag: at > 0 ? riotId.slice(at + 1).trim() : '' };
+}
+
+function accountName(account) {
+  return riotIdParts(account).name;
+}
+
 function isRanked(rank) {
   return !!rank && !!rank.tier && rank.tier !== 'UNRANKED';
 }
@@ -188,7 +200,7 @@ function buildRow(account) {
   row.dataset.row = account.id;
   row.innerHTML = `
     <div class="cell">
-      <span class="name" title="${esc(account.label)}">${account.stats?.live ? '<span class="live-dot" title="In a game at the last refresh"></span>' : ''}${account.pinned ? '<span class="pin-mark" title="Pinned">●</span>' : ''}${esc(account.label)}</span>
+      <span class="name" title="${esc(account.riotId)}">${account.stats?.live ? '<span class="live-dot" title="In a game at the last refresh"></span>' : ''}${account.pinned ? '<span class="pin-mark" title="Pinned">●</span>' : ''}${esc(accountName(account))}</span>
       <span class="sub-line">
         <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
         <span class="region">${esc(account.region)}</span>
@@ -260,7 +272,7 @@ function champArtUrl(name) {
 }
 
 function avatarHTML(account, size) {
-  const initial = esc((account.label || '?').charAt(0).toUpperCase());
+  const initial = esc((accountName(account) || '?').charAt(0).toUpperCase());
   const iconUrl = account.stats?.iconUrl;
   const img = iconUrl ? `<img src="${esc(iconUrl)}" alt="">` : '';
   const color = tierColor(account.stats?.solo);
@@ -373,18 +385,6 @@ function tagsHTML(account) {
     `<button class="tag js-tag" data-tag="${esc(tag)}" title="Show accounts tagged ${esc(tag)}">${esc(tag)}</button>`).join('')}</span>`;
 }
 
-function queueHTML(title, rank, extra = '') {
-  const ranked = isRanked(rank);
-  const total = ranked ? rank.wins + rank.losses : 0;
-  const pct = total > 0 ? Math.round(rank.wins / total * 100) : null;
-  return `<div class="queue">
-    <span class="stat-label">${title}</span>
-    <span class="stat-value" style="color:${ranked ? tierColor(rank) : 'var(--dim)'}">${esc(tierName(rank))}</span>
-    ${ranked ? `<span class="queue-line"><span>${esc(rank.lp)} LP · ${esc(rank.wins)}W ${esc(rank.losses)}L</span>${pct != null ? `<span class="${wrClass(pct)}">${pct}%</span>` : ''}</span>
-      <span class="wr-track"><span class="wr-fill" style="width:${pct ?? 0}%"></span></span>${extra}` : ''}
-  </div>`;
-}
-
 function recentHTML(recent, lastRankedAt) {
   if (!recent) return '';
   const lastPlayed = lastRankedAt ? `<span class="ago" title="Last ranked Solo/Duo game: ${esc(new Date(lastRankedAt).toLocaleString())}"> · ${esc(agoText(lastRankedAt))}</span>` : '';
@@ -425,59 +425,81 @@ function champPeriod(stats, queue) {
   return stats?.championScope === 'season' ? 'Solo/Duo' : `last ${esc(stats?.recent?.games ?? stats?.topChampions?.length)}`;
 }
 
-function highlightsHTML(stats, queue) {
-  const top = champListFor(stats, queue)[0];
-  const recent = stats?.recent;
-  const role = recent?.mainRole && ROLE_NAMES[recent.mainRole];
-  if (!top && !role) return '';
-  return `<div class="highlights">
-    ${top ? `<div class="highlight">
-      <span class="stat-label">Most played, ${champPeriod(stats, queue)}</span>
-      <span class="highlight-value">${esc(top.name)} <span class="highlight-sub">${esc(top.games)} G</span></span>
-    </div>` : ''}
-    ${role ? `<div class="highlight" title="Riot has no all-time role stat, so this comes from recent ranked games.">
-      <span class="stat-label">Main role, last ${esc(recent.games)}</span>
-      <span class="highlight-value">${esc(role)} <span class="highlight-sub">${esc(recent.mainRoleGames)} of ${esc(recent.games)}</span></span>
-    </div>` : ''}
+// ─── Card ─────────────────────────────────────────────────────────────────────
+// What matters most comes first: who the account is and where, then its rank with the
+// real emblem and the win rate as the two big numbers, then form and champions.
+
+function winRateOf(rank) {
+  const played = isRanked(rank) ? rank.wins + rank.losses : 0;
+  return { played, percent: played > 0 ? Math.round(rank.wins / played * 100) : null };
+}
+
+function flexLineHTML(stats) {
+  const flex = stats?.flex;
+  return `Flex: ${isRanked(flex) ? `<span style="color:${tierColor(flex)}">${esc(tierName(flex))}</span> · ${esc(flex.lp)} LP` : 'Unranked'}`;
+}
+
+/** Riot's own emblem for a tier. Unranked has none. */
+function emblemHTML(rank) {
+  if (!isRanked(rank)) return '';
+  const tier = rank.tier.toLowerCase();
+  return TIER_COLORS[rank.tier.toUpperCase()] ? `<img class="emblem" src="assets/ranks/${esc(tier)}.png" alt="">` : '';
+}
+
+/** The emblem, then rank and win rate as the two big numbers, with the bar, trend and Flex under them. */
+function rankHeroHTML(account, updated) {
+  const stats = account.stats;
+  const solo = stats?.solo;
+  const ranked = isRanked(solo);
+  const { percent } = winRateOf(solo);
+  return `<div class="rank-block" title="${esc(updated)}">
+    <div class="hero">
+      ${emblemHTML(solo)}
+      <div class="hero-main">
+        <span class="hero-value" style="color:${ranked ? tierColor(solo) : 'var(--dim)'}">${esc(tierName(solo))}</span>
+        <span class="hero-sub">${ranked ? `${esc(solo.lp)} LP · Solo / Duo` : 'Solo / Duo'}</span>
+      </div>
+      ${percent != null ? `<div class="hero-side">
+        <span class="hero-value ${wrClass(percent)}">${percent}%</span>
+        <span class="hero-sub">${esc(solo.wins)}W ${esc(solo.losses)}L</span>
+      </div>` : ''}
+    </div>
+    ${ranked ? `<span class="wr-track"><span class="wr-fill" style="width:${percent ?? 0}%"></span></span>` : ''}
+    <div class="hero-foot">${trendHTML(account.rankHistory)}<span class="flex-line">${flexLineHTML(stats)}</span></div>
   </div>`;
 }
 
-function champSectionHTML(account, queue) {
+/** The top three champions as chips, with the Solo/Flex switch. */
+function champChipsHTML(account, queue) {
   const stats = account.stats;
   if (!stats) return '';
-  const champs = champListFor(stats, queue);
   const id = esc(account.id);
-  const title = queue === 'solo' && stats.championScope !== 'season'
-    ? `Most played, last ${esc(stats.recent?.games ?? champs.length)} ranked`
-    : 'Most played this season';
-  const empty = queue === 'flex'
-    ? (stats.flexChampions ? 'No Flex games this season.' : 'Refresh to load Flex champions.')
-    : 'No Solo/Duo games yet.';
+  const champs = champListFor(stats, queue).slice(0, 3);
+  const role = stats.recent?.mainRole && ROLE_NAMES[stats.recent.mainRole];
+  const chips = champs.map(champ => {
+    const rate = champ.winRate != null ? Math.round(champ.winRate) : null;
+    return `<span class="chip" title="${esc(champ.name)}: ${esc(champ.games)} games">
+      <span class="champ-icon">${esc(champ.name.slice(0, 2))}<img src="${esc(champIconUrl(champ.name))}" alt=""></span>
+      <span class="chip-name">${esc(champ.name)}</span>
+      <span class="chip-dim">${esc(champ.games)}</span>
+      ${rate != null ? `<span class="${wrClass(rate)}">${rate}%</span>` : ''}
+    </span>`;
+  }).join('');
+  const empty = queue === 'flex' ? 'No Flex games this season.' : 'No Solo/Duo games yet.';
   return `<div class="card-champs">
     <div class="champs-head">
-      <span class="stat-label">${title}</span>
+      <span class="stat-label">Most played${role ? ` · ${esc(role)} main` : ''}</span>
       <div class="queue-switch">
         <button class="js-champ-queue ${queue === 'solo' ? 'active' : ''}" data-account="${id}" data-queue="solo">Solo/Duo</button>
         <button class="js-champ-queue ${queue === 'flex' ? 'active' : ''}" data-account="${id}" data-queue="flex">Flex</button>
       </div>
     </div>
-    ${champs.length ? champs.map(champRowHTML).join('') : `<span class="hint">${empty}</span>`}
-  </div>`;
-}
-
-function champRowHTML(c) {
-  const wr = c.winRate != null ? Math.round(c.winRate) : null;
-  return `<div class="champ" title="${esc(c.name)}">
-    <span class="champ-icon">${esc(c.name.slice(0, 2))}<img src="${esc(champIconUrl(c.name))}" alt=""></span>
-    <span class="champ-name">${esc(c.name)}</span>
-    <span class="champ-cell" title="${esc(c.games)} games">${esc(c.games)} G</span>
-    <span class="champ-cell ${wr != null ? wrClass(wr) : ''}">${wr != null ? `${wr}%` : '-'}</span>
+    <div class="chips">${chips || `<span class="hint">${empty}</span>`}</div>
   </div>`;
 }
 
 function buildCard(account) {
   const stats = account.stats;
-  const solo = stats?.solo;
   const id = esc(account.id);
   const queue = champQueueFor(account.id);
   // The art follows the switch, but keeps a champion when that queue has none.
@@ -485,6 +507,7 @@ function buildCard(account) {
   const updated = stats?.fetchedAt
     ? `Updated ${new Date(stats.fetchedAt).toLocaleString()}`
     : 'No stats yet';
+  const { name, tag } = riotIdParts(account);
 
   const card = document.createElement('article');
   card.className = 'card';
@@ -494,10 +517,10 @@ function buildCard(account) {
     <div class="card-head">
       ${avatarHTML(account, 'medium')}
       <div class="card-id">
-        <span class="card-name" title="${esc(account.label)}">${esc(account.label)}</span>
-        <span class="sub-line">
-          <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
-          <span class="region">${esc(account.region)}</span>
+        <span class="name-line">
+          <button class="card-name js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open ${esc(account.riotId)} on op.gg">${esc(name)}</button>
+          ${tag ? `<span class="tagline">#${esc(tag)}</span>` : ''}
+          <span class="region-badge" title="Region">${esc(account.region)}</span>
         </span>
         <span class="sub-line meta-line">
           ${stats?.summonerLevel != null ? `<span class="stat-sub">Level ${esc(stats.summonerLevel)}</span>` : ''}
@@ -505,21 +528,16 @@ function buildCard(account) {
         </span>
         ${tagsHTML(account)}
       </div>
-      <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.label)}" title="${playTitle(id)}">${ICONS.play}</button>
+      <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.riotId)}" title="${playTitle(id)}">${ICONS.play}</button>
     </div>
 
     ${liveHTML(stats)}
 
-    ${highlightsHTML(stats, queue)}
-
-    <div class="queues" title="${esc(updated)}">
-      ${queueHTML('Solo / Duo', solo, trendHTML(account.rankHistory))}
-      ${queueHTML('Flex', stats?.flex)}
-    </div>
+    ${rankHeroHTML(account, updated)}
 
     ${recentHTML(stats?.recent, stats?.lastRankedAt)}
 
-    ${champSectionHTML(account, queue)}
+    ${champChipsHTML(account, queue)}
 
     ${!stats?.recent ? `<span class="hint">${stats ? 'Refresh for recent-game analytics.' : 'No stats yet. Refresh to fetch them.'}</span>` : ''}
 
@@ -554,16 +572,16 @@ function sortAccounts() {
   } else if (currentSortMode === 'lowest') {
     sortedAccounts.sort((a, b) => rankScore(a.stats) - rankScore(b.stats));
   } else if (currentSortMode === 'region') {
-    sortedAccounts.sort((a, b) => (a.region || '').localeCompare(b.region || '') || a.label.localeCompare(b.label));
+    sortedAccounts.sort((a, b) => (a.region || '').localeCompare(b.region || '') || accountName(a).localeCompare(accountName(b)));
   }
   // Pinned accounts lead, in the same order among themselves. The sort is stable.
   sortedAccounts.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
 }
 
-/** Every word typed must appear in the label, Riot ID, region or a tag. */
+/** Every word typed must appear in the Riot ID, region or a tag. */
 function matchesSearch(account) {
   if (!searchQuery) return true;
-  const text = [account.label, account.riotId, account.region, ...(account.tags || [])].join('\n').toLowerCase();
+  const text = [account.riotId, account.region, ...(account.tags || [])].join('\n').toLowerCase();
   return searchQuery.split(/\s+/).every(word => text.includes(word));
 }
 
@@ -746,7 +764,7 @@ async function handleLaunchAccount(id) {
   // Signing in types into the Riot Client, so only one can run at a time.
   const playButtons = () => appRoot.querySelectorAll('.js-launch');
   playButtons().forEach(b => { b.disabled = true; });
-  setProgressToast(`Signing in to ${acc.label}...`, 'launch-toast');
+  setProgressToast(`Signing in to ${accountName(acc)}...`, 'launch-toast');
   try {
     const message = await invoke('launch_account', { id });
     const auto = queueSettingFor(id);
@@ -805,13 +823,13 @@ function confirmDelete(label) {
 
 modalDeleteBtn.addEventListener('click', async () => {
   const acc = allAccounts.find(a => a.id === editIdInput.value);
-  if (!acc || !await confirmDelete(acc.label)) return;
+  if (!acc || !await confirmDelete(acc.riotId || accountName(acc))) return;
   try {
     await invoke('delete_account', { id: acc.id });
     saveQueueSetting(acc.id, null);
     closeModal();
     await renderAccounts();
-    showToast(`${acc.label} deleted.`);
+    showToast(`${accountName(acc)} deleted.`);
   } catch (err) {
     showToast(String(err) || 'Failed to delete', 'error');
   }
@@ -1111,23 +1129,14 @@ function setQueueFields(setting) {
   syncQueueFields();
 }
 
-/** The first "Account#N" no account uses yet. */
-function nextAccountLabel() {
-  const used = new Set(allAccounts.map(a => a.label.trim().toLowerCase()));
-  let n = 1;
-  while (used.has(`account#${n}`)) n++;
-  return `Account#${n}`;
-}
-
 function openAddModal() {
   modalTitle.textContent = 'Add account';
   editIdInput.value = '';
   clearModalFields();
   modalDeleteBtn.classList.add('hidden');
   document.getElementById('field-password').placeholder = '';
-  document.getElementById('field-label').placeholder = nextAccountLabel();
   accountModal.classList.remove('hidden');
-  document.getElementById('field-label').focus();
+  document.getElementById('field-riotid').focus();
 }
 
 function openEditModal(id) {
@@ -1137,8 +1146,6 @@ function openEditModal(id) {
   modalTitle.textContent = 'Edit account';
   clearModalFields();
   editIdInput.value = id;
-  document.getElementById('field-label').value    = acc.label;
-  document.getElementById('field-label').placeholder = acc.label;
   document.getElementById('field-username').value = acc.username;
   document.getElementById('field-riotid').value   = acc.riotId;
   document.getElementById('field-region').value   = acc.region;
@@ -1148,7 +1155,7 @@ function openEditModal(id) {
   document.getElementById('field-password').placeholder = 'Leave blank to keep current';
   modalDeleteBtn.classList.remove('hidden');
   accountModal.classList.remove('hidden');
-  document.getElementById('field-label').focus();
+  document.getElementById('field-riotid').focus();
 }
 
 function closeModal() {
@@ -1157,7 +1164,7 @@ function closeModal() {
 }
 
 function clearModalFields() {
-  ['field-label', 'field-username', 'field-password', 'field-riotid'].forEach(id => {
+  ['field-username', 'field-password', 'field-riotid'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('field-region').value = 'NA';
@@ -1175,13 +1182,11 @@ function showModalError(msg) {
 
 async function handleModalSave() {
   const id       = editIdInput.value;
-  // A blank label is filled in: the next "Account#N" when adding, the current one when editing.
-  const label    = document.getElementById('field-label').value.trim()
-    || allAccounts.find(a => a.id === id)?.label
-    || nextAccountLabel();
   const username = document.getElementById('field-username').value.trim();
   const password = document.getElementById('field-password').value;
   const riotId   = document.getElementById('field-riotid').value.trim();
+  // The vault keeps a label for older versions of the app; it is simply the name now.
+  const label    = riotId.split('#')[0].trim();
   const region   = document.getElementById('field-region').value;
   const tags     = document.getElementById('field-tags').value.split(',').map(tag => tag.trim()).filter(Boolean);
   const pinned   = document.getElementById('field-pinned').checked;
@@ -1472,6 +1477,7 @@ let fitting = Promise.resolve();
 
 /** Works out the window size for the accounts on screen, without resizing anything. */
 function planWindow() {
+  const fit = FIT;
   const scroller = accountList.parentElement;
   const items = [...accountList.children];
   const style = getComputedStyle(scroller);
@@ -1479,15 +1485,15 @@ function planWindow() {
   const bottomPad = parseFloat(style.paddingBottom);
   const maxWidth = screen.availWidth - SCREEN_MARGIN;
   const maxHeight = screen.availHeight - SCREEN_MARGIN;
-  const widthFor = cols => Math.max(FIT.minWidth, sidePad + cols * FIT.itemWidth + (cols - 1) * FIT.gap);
+  const widthFor = cols => Math.max(fit.minWidth, sidePad + cols * fit.itemWidth + (cols - 1) * fit.gap);
 
-  if (items.length === 0) return { width: widthFor(Math.min(2, FIT.maxCols)), height: FIT.emptyHeight };
+  if (items.length === 0) return { width: widthFor(Math.min(2, fit.maxCols)), height: fit.emptyHeight };
 
-  const colsOnScreen = Math.floor((maxWidth - sidePad + FIT.gap) / (FIT.itemWidth + FIT.gap));
-  const maxCols = Math.max(1, Math.min(FIT.maxCols, colsOnScreen, items.length));
+  const colsOnScreen = Math.floor((maxWidth - sidePad + fit.gap) / (fit.itemWidth + fit.gap));
+  const maxCols = Math.max(1, Math.min(fit.maxCols, colsOnScreen, items.length));
   let plan;
   // Start at the usual width; go wider only when that shows more accounts.
-  for (let cols = Math.min(FIT.startCols, maxCols); cols <= maxCols; cols++) {
+  for (let cols = Math.min(fit.startCols, maxCols); cols <= maxCols; cols++) {
     const width = widthFor(cols);
     // Lay the list out as it would be at that width, measure, and put it back.
     accountList.style.width = `${width - sidePad}px`;
@@ -1506,7 +1512,7 @@ function planWindow() {
     const shown = Math.max(1, heights.filter(height => height <= maxHeight).length);
     plan = {
       width,
-      height: Math.max(FIT.minSize[1], Math.min(heights[shown - 1], maxHeight)),
+      height: Math.max(fit.minSize[1], Math.min(heights[shown - 1], maxHeight)),
     };
     if (shown === heights.length) break;
   }

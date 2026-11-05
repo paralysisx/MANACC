@@ -91,9 +91,6 @@
     <h3 id="modal-title">Add account</h3>
     <input type="hidden" id="edit-id">
     <div class="fields">
-      <label class="field">Label
-        <input type="text" id="field-label" placeholder="Main, Smurf, Alt" maxlength="30">
-      </label>
       <label class="field">Riot ID
         <input type="text" id="field-riotid" placeholder="GameName#TAG" autocomplete="off">
       </label>
@@ -236,8 +233,8 @@
     <div class="lobby-list" id="lobby-list"></div>
     <p id="lobby-error" class="error hidden"></p>
     <div class="modal-actions">
-      <button class="btn left" id="lobby-open-opgg-btn">op.gg</button>
-      <button class="btn" id="lobby-open-tracker-btn">Tracker</button>
+      <button class="btn left site-btn" id="lobby-open-opgg-btn" title="Open the team on op.gg"><img src="assets/opgg.png" alt="" draggable="false">op.gg</button>
+      <button class="btn site-btn" id="lobby-open-tracker-btn" title="Open the team on tracker.gg"><img src="assets/tracker.png" alt="" draggable="false">Tracker</button>
       <button class="btn" id="lobby-refresh-btn">Refresh</button>
       <button class="btn primary" id="lobby-done-btn">Done</button>
     </div>

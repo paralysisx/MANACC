@@ -391,6 +391,9 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   color: var(--ink);
 }
 .btn:hover:not(:disabled) { background: var(--raised); border-color: var(--line-strong); }
+/* A button that opens a site carries that site's icon. */
+.site-btn { display: inline-flex; align-items: center; gap: 7px; padding-left: 8px; }
+.site-btn img { width: 16px; height: 16px; border-radius: 4px; pointer-events: none; }
 .btn.ghost { background: none; border-color: transparent; color: var(--dim); }
 .btn.ghost:hover:not(:disabled) { background: var(--hover); border-color: transparent; color: var(--ink); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
@@ -716,3 +719,40 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 }
 /* Cards are slightly see-through, so the sky shows faintly behind them. No blur: that would cost GPU time. */
 :root[data-theme="starry"]:not([data-low]) .card { background: rgba(12, 23, 53, 0.8); border-color: rgba(150, 180, 255, 0.2); }
+
+/* Card: the account's name and region */
+.name-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.name-line .card-name { min-width: 0; padding: 0; font-size: 16px; text-align: left; }
+.name-line .card-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tagline { flex: none; color: #c8c8cc; font-size: 12px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9); }
+.region-badge {
+  flex: none;
+  align-self: center;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+}
+
+/* Card: rank and win rate */
+.rank-block { display: flex; flex-direction: column; gap: 6px; }
+.hero { display: flex; align-items: center; gap: 10px; }
+.emblem { flex: none; width: 76px; height: 56px; object-fit: contain; margin: -4px 0 -4px -6px; }
+.hero-main, .hero-side { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero-main { flex: 1; }
+.hero-side { align-items: flex-end; flex: none; }
+.hero-value { font-size: 24px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-sub { color: var(--dim); font-size: 12px; white-space: nowrap; }
+.hero-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; min-height: 16px; }
+.hero-foot .trend { margin-top: 0; }
+.flex-line { margin-left: auto; color: var(--dim); font-size: 12px; white-space: nowrap; }
+
+/* Card: most played champions */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 3px; background: var(--raised); border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.chip .champ-icon { width: 20px; height: 20px; border-radius: 4px; }
+.chip-dim { color: var(--dim); }
