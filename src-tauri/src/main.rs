@@ -7,6 +7,8 @@ mod launcher;
 mod scraper;
 mod session;
 mod storage;
+#[cfg(target_os = "windows")]
+mod window_icon;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -70,7 +72,9 @@ fn main() {
                     .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu")
                     .data_directory(app.path().app_local_data_dir()?.join("EBWebView-low"));
             }
-            window.build()?;
+            let window = window.build()?;
+            #[cfg(target_os = "windows")]
+            window_icon::apply(&window);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

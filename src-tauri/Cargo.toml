@@ -30,6 +30,7 @@ urlencoding    = "2"
 [target.'cfg(windows)'.dependencies]
 winreg      = "0.52"
 is_elevated = "0.1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 opt-level     = "z"
