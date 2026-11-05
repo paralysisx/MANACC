@@ -1,5 +1,5 @@
 use crate::session::SessionState;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -32,9 +32,21 @@ pub struct LobbyView {
     pub players: Vec<LobbyPlayer>,
     /// The signed-in player's own Riot ID, so they aren't looked up as a teammate.
     pub me: Option<String>,
-    /// The positions the four teammates were assigned, in no particular order. Names
-    /// in champion select aren't tied to positions. Empty outside draft queues.
-    pub positions: Vec<String>,
+    /// The team's slots in champion select: position and champion. Names aren't tied
+    /// to slots. Empty outside champion select.
+    pub cells: Vec<TeamCell>,
+}
+
+/// One slot on the team in champion select.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TeamCell {
+    /// TOP, JUNGLE, MIDDLE, BOTTOM or UTILITY. Empty outside draft queues.
+    pub position: String,
+    /// The champion picked or hovered. 0 when there is none yet.
+    #[serde(rename = "championId")]
+    pub champion_id: i64,
+    /// The signed-in player's own slot.
+    pub me: bool,
 }
 
 #[derive(Debug)]
@@ -105,9 +117,9 @@ pub fn get_lobby_view(state: State<'_, Mutex<SessionState>>) -> Result<LobbyView
     let me = lcu_get_json(&client, &lockfile, "/lol-summoner/v1/current-summoner")
         .ok()
         .and_then(|summoner| Some(format!("{}#{}", summoner["gameName"].as_str()?, summoner["tagLine"].as_str()?)));
-    let positions = if in_champ_select {
+    let cells = if in_champ_select {
         lcu_get_json(&client, &lockfile, "/lol-champ-select/v1/session")
-            .map(|session| teammate_positions(&session))
+            .map(|session| team_cells(&session))
             .unwrap_or_default()
     } else {
         Vec::new()
@@ -119,51 +131,88 @@ pub fn get_lobby_view(state: State<'_, Mutex<SessionState>>) -> Result<LobbyView
         region,
         players,
         me,
-        positions,
+        cells,
     })
 }
 
-/// The positions assigned to the teammates in a champion select session, leaving out
-/// the local player's own.
-fn teammate_positions(session: &serde_json::Value) -> Vec<String> {
+/// The team's slots right now. Asked for again while the Lobby window is open, since
+/// picks come in one by one. Empty when there is no champion select.
+#[tauri::command]
+pub async fn get_team_picks(state: State<'_, Mutex<SessionState>>) -> Result<Vec<TeamCell>, String> {
+    if !state.lock().unwrap().is_authenticated() {
+        return Err("Not authenticated".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(|| {
+        let Some(lockfile) = find_lockfile_path().and_then(|path| read_lockfile(&path)) else {
+            return Vec::new();
+        };
+        let Ok(client) = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+        else {
+            return Vec::new();
+        };
+        lcu_get_json(&client, &lockfile, "/lol-champ-select/v1/session")
+            .map(|session| team_cells(&session))
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|e| format!("Couldn't read champion select: {e}"))
+}
+
+/// The team's slots in a champion select session: the position each was given and the
+/// champion picked, or hovered when nothing is locked in yet.
+fn team_cells(session: &serde_json::Value) -> Vec<TeamCell> {
     let me = session["localPlayerCellId"].as_i64();
     session["myTeam"]
         .as_array()
         .map(|team| {
             team.iter()
-                .filter(|member| member["cellId"].as_i64() != me || me.is_none())
-                .filter_map(|member| member["assignedPosition"].as_str())
-                .filter(|position| !position.is_empty())
-                .map(|position| position.to_uppercase())
+                .map(|member| {
+                    let picked = member["championId"].as_i64().filter(|id| *id > 0);
+                    let hovered = member["championPickIntent"].as_i64().filter(|id| *id > 0);
+                    TeamCell {
+                        position: member["assignedPosition"].as_str().unwrap_or_default().to_uppercase(),
+                        champion_id: picked.or(hovered).unwrap_or(0),
+                        me: me.is_some() && member["cellId"].as_i64() == me,
+                    }
+                })
                 .collect()
         })
         .unwrap_or_default()
 }
 
 #[cfg(test)]
-mod position_tests {
-    use super::teammate_positions;
+mod cell_tests {
+    use super::{team_cells, TeamCell};
 
     #[test]
-    fn teammates_positions_leave_out_the_local_player() {
+    fn slots_carry_position_champion_and_which_one_is_mine() {
         let session = serde_json::json!({
             "localPlayerCellId": 2,
             "myTeam": [
-                { "cellId": 0, "assignedPosition": "top" },
-                { "cellId": 1, "assignedPosition": "jungle" },
-                { "cellId": 2, "assignedPosition": "middle" },
-                { "cellId": 3, "assignedPosition": "bottom" },
-                { "cellId": 4, "assignedPosition": "utility" }
+                { "cellId": 0, "assignedPosition": "top", "championId": 54, "championPickIntent": 0 },
+                { "cellId": 1, "assignedPosition": "jungle", "championId": 0, "championPickIntent": 64 },
+                { "cellId": 2, "assignedPosition": "middle", "championId": 103, "championPickIntent": 0 },
+                { "cellId": 3, "assignedPosition": "bottom", "championId": 0, "championPickIntent": 0 }
             ]
         });
-        assert_eq!(teammate_positions(&session), vec!["TOP", "JUNGLE", "BOTTOM", "UTILITY"]);
+        let cell = |position: &str, champion_id, me| TeamCell { position: position.to_string(), champion_id, me };
+        assert_eq!(team_cells(&session), vec![
+            cell("TOP", 54, false),
+            cell("JUNGLE", 64, false),
+            cell("MIDDLE", 103, true),
+            cell("BOTTOM", 0, false),
+        ]);
     }
 
     #[test]
-    fn blind_pick_has_no_positions() {
+    fn blind_pick_has_slots_without_positions() {
         let session = serde_json::json!({ "localPlayerCellId": 0, "myTeam": [{ "cellId": 0, "assignedPosition": "" }, { "cellId": 1, "assignedPosition": "" }] });
-        assert!(teammate_positions(&session).is_empty());
-        assert!(teammate_positions(&serde_json::json!({})).is_empty());
+        let cells = team_cells(&session);
+        assert_eq!((cells.len(), cells[0].me, cells[1].position.as_str()), (2, true, ""));
+        assert!(team_cells(&serde_json::json!({})).is_empty());
     }
 }
 

@@ -469,23 +469,26 @@ function rankHeroHTML(account, updated) {
   </div>`;
 }
 
-/** The top three champions as chips, with the Solo/Flex switch. */
-function champChipsHTML(account, queue) {
+function champRowHTML(champ) {
+  const rate = champ.winRate != null ? Math.round(champ.winRate) : null;
+  return `<div class="champ" title="${esc(champ.name)}">
+    <span class="champ-icon">${esc(champ.name.slice(0, 2))}<img src="${esc(champIconUrl(champ.name))}" alt=""></span>
+    <span class="champ-name">${esc(champ.name)}</span>
+    <span class="champ-cell" title="${esc(champ.games)} games">${esc(champ.games)} G</span>
+    <span class="champ-cell ${rate != null ? wrClass(rate) : ''}">${rate != null ? `${rate}%` : '-'}</span>
+  </div>`;
+}
+
+/** The most played champions as a list, one per row, with the Solo/Flex switch. */
+function champListHTML(account, queue) {
   const stats = account.stats;
   if (!stats) return '';
   const id = esc(account.id);
-  const champs = champListFor(stats, queue).slice(0, 3);
+  const champs = champListFor(stats, queue);
   const role = stats.recent?.mainRole && ROLE_NAMES[stats.recent.mainRole];
-  const chips = champs.map(champ => {
-    const rate = champ.winRate != null ? Math.round(champ.winRate) : null;
-    return `<span class="chip" title="${esc(champ.name)}: ${esc(champ.games)} games">
-      <span class="champ-icon">${esc(champ.name.slice(0, 2))}<img src="${esc(champIconUrl(champ.name))}" alt=""></span>
-      <span class="chip-name">${esc(champ.name)}</span>
-      <span class="chip-dim">${esc(champ.games)}</span>
-      ${rate != null ? `<span class="${wrClass(rate)}">${rate}%</span>` : ''}
-    </span>`;
-  }).join('');
-  const empty = queue === 'flex' ? 'No Flex games this season.' : 'No Solo/Duo games yet.';
+  const empty = queue === 'flex'
+    ? (stats.flexChampions ? 'No Flex games this season.' : 'Refresh to load Flex champions.')
+    : 'No Solo/Duo games yet.';
   return `<div class="card-champs">
     <div class="champs-head">
       <span class="stat-label">Most played${role ? ` · ${esc(role)} main` : ''}</span>
@@ -494,7 +497,7 @@ function champChipsHTML(account, queue) {
         <button class="js-champ-queue ${queue === 'flex' ? 'active' : ''}" data-account="${id}" data-queue="flex">Flex</button>
       </div>
     </div>
-    <div class="chips">${chips || `<span class="hint">${empty}</span>`}</div>
+    ${champs.length ? champs.map(champRowHTML).join('') : `<span class="hint">${empty}</span>`}
   </div>`;
 }
 
@@ -537,7 +540,7 @@ function buildCard(account) {
 
     ${recentHTML(stats?.recent, stats?.lastRankedAt)}
 
-    ${champChipsHTML(account, queue)}
+    ${champListHTML(account, queue)}
 
     ${!stats?.recent ? `<span class="hint">${stats ? 'Refresh for recent-game analytics.' : 'No stats yet. Refresh to fetch them.'}</span>` : ''}
 
@@ -853,10 +856,20 @@ function closeLobbyViewer() {
   lobbyModal.classList.add('hidden');
   activeLobbyData = null;
   scoutRun++;
+  stopPicksWatch();
 }
 
 /** Each look at a lobby gets a number; a newer one makes the older stop quietly. */
 let scoutRun = 0;
+/** Lookups already made, by Riot ID, so a refresh or a new pick costs no more requests. */
+const scoutCache = new Map();
+const SCOUT_CACHE_MS = 15 * 60000;
+/** The teammates' reports and the team's slots for the lobby on screen. */
+let lobbyReports = [];
+let lobbyCells = [];
+let picksTimer = null;
+/** Picks are read from the League client this often, only while the window is open in champion select. */
+const PICKS_EVERY_MS = 4000;
 
 function lobbyName(player) {
   return (player.gameName && player.tagLine) ? `${player.gameName}#${player.tagLine}` : (player.summonerName || 'Hidden');
@@ -880,6 +893,7 @@ function renderLobbyPlayers(players, me) {
         <span class="lobby-rank"></span>
       </div>
       <div class="lobby-detail hint"></div>
+      <div class="lobby-pick"></div>
     </div>`;
   }).join('');
 }
@@ -904,13 +918,94 @@ function scoutHTML(report) {
   };
 }
 
+function masteryText(points) {
+  if (points >= 1_000_000) return `${(points / 1_000_000).toFixed(1)}M`;
+  if (points >= 1000) return `${Math.round(points / 1000)}k`;
+  return String(points);
+}
+
+/**
+ * Where a teammate most likely is and what they are most likely on. Names in champion
+ * select aren't tied to slots, so this is the best fit and says "likely".
+ */
+function pickHTML(player, report) {
+  const role = player.position && (ROLE_NAMES[player.position] || capitalise(player.position));
+  if (!role && !player.champion) return { html: '', tone: '' };
+  // Off-role with no champion they know to go by: any slot fits equally badly, so
+  // naming one would be a guess.
+  const known = player.comfort === 'main' || player.comfort === 'fine';
+  if (player.offRole && !known) {
+    const maybe = player.champion ? ` · may be on ${esc(player.champion)}${player.comfort === 'new' ? ', which they barely play' : ''}` : '';
+    return { html: `<strong>Off their usual role</strong>${maybe}`, tone: 'bad' };
+  }
+  const parts = [];
+  if (player.champion && player.mastery != null) parts.push(`${esc(masteryText(player.mastery))} mastery`);
+  if (player.champion && report?.recentGames > 0) parts.push(`${esc(player.recentOnChampion)} of last ${esc(report.recentGames)} games`);
+  if (player.offRole) parts.push('off-role');
+  if (player.comfort === 'new') parts.push('barely plays it');
+  if (player.comfort === 'main') parts.push('plays it a lot');
+  const where = [role, player.champion && `on ${player.champion}`].filter(Boolean).join(' ');
+  return {
+    html: `Likely <strong>${esc(where)}</strong>${parts.length ? ` · ${parts.join(' · ')}` : ''}`,
+    tone: player.offRole || player.comfort === 'new' ? 'bad' : player.comfort === 'main' ? 'good' : '',
+  };
+}
+
 function teamReadHTML(team, looked, teammates) {
   const tone = team.estimate >= 53 ? 'good' : team.estimate <= 47 ? 'bad' : '';
   const notes = team.notes.map(note =>
     `<li class="${note.points >= 0.5 ? 'good' : note.points <= -0.5 ? 'bad' : ''}">${esc(note.text)}</li>`).join('');
   return `<div class="team-estimate ${tone}"><strong>${esc(team.estimate)}%</strong><span>rough win estimate</span></div>
     <ul class="team-notes">${notes || '<li>Nothing stands out.</li>'}</ul>
-    <p class="hint">From the rank and latest ranked games of ${esc(looked)} of ${esc(teammates)} teammates. The enemy team is unknown, so treat this as a hint.</p>`;
+    <p class="hint">A hint from ${esc(looked)} of ${esc(teammates)} teammates' stats and picks. The enemy team is unknown.</p>`;
+}
+
+/** Reads the team from the reports and slots on hand, and draws the estimate and each likely pick. */
+async function showTeamRead(run) {
+  if (lobbyReports.length === 0) return;
+  const read = document.getElementById('lobby-read');
+  try {
+    const team = await invoke('read_team', { teammates: lobbyReports, cells: lobbyCells });
+    if (run !== scoutRun) return;
+    const teammates = lobbyList.querySelectorAll('.lobby-player[data-riot]').length;
+    read.innerHTML = teamReadHTML(team, lobbyReports.length, Math.max(teammates, lobbyReports.length));
+    read.classList.remove('hidden');
+    for (const player of team.players) {
+      const row = [...lobbyList.querySelectorAll('.lobby-player[data-riot]')].find(el => sameRiotId(el.dataset.riot, player.riotId));
+      const line = row?.querySelector('.lobby-pick');
+      if (!line) continue;
+      const shown = pickHTML(player, lobbyReports.find(report => sameRiotId(report.riotId, player.riotId)));
+      line.innerHTML = shown.html;
+      line.className = `lobby-pick ${shown.tone}`;
+    }
+  } catch (err) {
+    console.warn('Could not read the team:', err);
+  }
+}
+
+/** New slots from the League client: redraw the read if a pick or hover changed. */
+function updateTeamPicks(cells) {
+  if (!cells || cells.length === 0 || JSON.stringify(cells) === JSON.stringify(lobbyCells)) return;
+  lobbyCells = cells;
+  showTeamRead(scoutRun);
+}
+
+function stopPicksWatch() {
+  if (picksTimer) clearInterval(picksTimer);
+  picksTimer = null;
+}
+
+function startPicksWatch(data) {
+  stopPicksWatch();
+  if (!data.inChampSelect) return;
+  picksTimer = setInterval(async () => {
+    if (lobbyModal.classList.contains('hidden')) return stopPicksWatch();
+    try {
+      updateTeamPicks(await invoke('get_team_picks'));
+    } catch {
+      // The client may be between screens; the next tick tries again.
+    }
+  }, PICKS_EVERY_MS);
 }
 
 /** In champion select: looks up each teammate in turn, then reads the team as a whole. */
@@ -919,6 +1014,8 @@ async function scoutLobby(data) {
   const read = document.getElementById('lobby-read');
   read.classList.add('hidden');
   read.innerHTML = '';
+  lobbyReports = [];
+  lobbyCells = data.cells || [];
   if (!data.inChampSelect) return;
 
   const teammates = data.players
@@ -929,10 +1026,17 @@ async function scoutLobby(data) {
   const reports = [];
   for (const mate of teammates) {
     const row = lobbyList.querySelector(`[data-player="${mate.index}"]`);
+    if (row) row.dataset.riot = mate.riotId;
     const detail = row?.querySelector('.lobby-detail');
-    if (detail) detail.innerHTML = `${LOADER}Looking up...`;
+    const key = mate.riotId.replace(/\s+/g, '').toLowerCase();
+    const cached = scoutCache.get(key);
     try {
-      const report = await invoke('scout_player', { riotId: mate.riotId, region: data.region || 'NA' });
+      let report = cached && Date.now() - cached.at < SCOUT_CACHE_MS ? cached.report : null;
+      if (!report) {
+        if (detail) detail.innerHTML = `${LOADER}Looking up...`;
+        report = await invoke('scout_player', { riotId: mate.riotId, region: data.region || 'NA' });
+        scoutCache.set(key, { report, at: Date.now() });
+      }
       if (run !== scoutRun) return;
       reports.push(report);
       const shown = scoutHTML(report);
@@ -944,16 +1048,8 @@ async function scoutLobby(data) {
       if (detail) detail.textContent = String(err) || 'No data';
     }
   }
-  if (reports.length === 0) return;
-
-  try {
-    const team = await invoke('read_team', { teammates: reports, positions: data.positions || [] });
-    if (run !== scoutRun) return;
-    read.innerHTML = teamReadHTML(team, reports.length, teammates.length);
-    read.classList.remove('hidden');
-  } catch (err) {
-    console.warn('Could not read the team:', err);
-  }
+  lobbyReports = reports;
+  await showTeamRead(run);
 }
 
 /** Shows a lobby and, in champion select, starts looking up the teammates. */
@@ -962,12 +1058,14 @@ function showLobby(data) {
   lobbyMeta.textContent = `${data.phase} · ${data.region || 'NA'} · ${data.players.length} players`;
   renderLobbyPlayers(data.players, data.me);
   scoutLobby(data);
+  startPicksWatch(data);
 }
 
 async function fetchLobby() {
   const refreshBtn = document.getElementById('lobby-refresh-btn');
   refreshBtn.disabled = true;
   scoutRun++;
+  stopPicksWatch();
   lobbyError.classList.add('hidden');
   document.getElementById('lobby-read').classList.add('hidden');
   lobbyMeta.innerHTML = `${LOADER}Checking League client...`;

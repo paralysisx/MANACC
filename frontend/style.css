@@ -571,12 +571,17 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .lobby-list::-webkit-scrollbar { width: 8px; }
 .lobby-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 .lobby-list::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
-.modal.lobby .lobby-list { max-height: 300px; }
+.modal.lobby .lobby-list { max-height: 330px; }
 .lobby-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .lobby-name { min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lobby-rank { flex: none; font-size: 12px; font-weight: 500; }
 .lobby-detail { margin-top: 2px; }
 .lobby-detail:empty { display: none; }
+.lobby-pick { margin-top: 2px; color: var(--dim); font-size: 12px; }
+.lobby-pick:empty { display: none; }
+.lobby-pick strong { color: var(--ink); font-weight: 500; }
+.lobby-pick.good strong { color: var(--success); }
+.lobby-pick.bad strong { color: var(--danger); }
 .you { margin-left: 6px; padding: 0 5px; border-radius: 7px; background: var(--raised); color: var(--dim); font-size: 11px; font-weight: 400; }
 
 /* The team read in champion select */
@@ -751,8 +756,3 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .hero-foot .trend { margin-top: 0; }
 .flex-line { margin-left: auto; color: var(--dim); font-size: 12px; white-space: nowrap; }
 
-/* Card: most played champions */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 3px; background: var(--raised); border-radius: 6px; font-size: 12px; white-space: nowrap; }
-.chip .champ-icon { width: 20px; height: 20px; border-radius: 4px; }
-.chip-dim { color: var(--dim); }

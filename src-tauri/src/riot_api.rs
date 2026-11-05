@@ -162,6 +162,8 @@ struct ActiveParticipant {
 struct Participant {
     puuid: String,
     champion_name: String,
+    #[serde(default)]
+    champion_id: i64,
     win: bool,
     #[serde(default)]
     game_ended_in_early_surrender: bool,
@@ -179,6 +181,7 @@ struct Participant {
 #[derive(Debug, Clone, Default)]
 struct Game {
     champion: String,
+    champion_id: i64,
     win: bool,
     kills: i64,
     deaths: i64,
@@ -257,29 +260,52 @@ fn latest_ddragon_version() -> Option<&'static str> {
         .as_deref()
 }
 
-/// Champion names by their numeric id, from Data Dragon. Fetched once, when first needed.
-fn champion_names() -> Option<&'static HashMap<i64, String>> {
-    static NAMES: OnceLock<Option<HashMap<i64, String>>> = OnceLock::new();
-    NAMES
+/// What Data Dragon says about a champion.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChampionInfo {
+    pub name: String,
+    /// Classes, like "Tank" or "Mage".
+    pub tags: Vec<String>,
+    /// Data Dragon's 0-10 ratings for physical and magic damage.
+    pub attack: i64,
+    pub magic: i64,
+}
+
+/// Every champion by numeric id, from Data Dragon. Fetched once, when first needed.
+pub fn champions() -> Option<&'static HashMap<i64, ChampionInfo>> {
+    static CHAMPIONS: OnceLock<Option<HashMap<i64, ChampionInfo>>> = OnceLock::new();
+    CHAMPIONS
         .get_or_init(|| {
             let version = latest_ddragon_version()?;
             let text = client().ok()?
                 .get(format!("https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"))
                 .send().ok()?
                 .text().ok()?;
-            parse_champion_names(&text)
+            parse_champions(&text)
         })
         .as_ref()
 }
 
-fn parse_champion_names(json: &str) -> Option<HashMap<i64, String>> {
+fn parse_champions(json: &str) -> Option<HashMap<i64, ChampionInfo>> {
     let parsed: serde_json::Value = serde_json::from_str(json).ok()?;
-    let names = parsed["data"]
+    let champions = parsed["data"]
         .as_object()?
         .values()
-        .filter_map(|champion| Some((champion["key"].as_str()?.parse().ok()?, champion["name"].as_str()?.to_string())))
+        .filter_map(|champion| {
+            let id = champion["key"].as_str()?.parse().ok()?;
+            let tags = champion["tags"]
+                .as_array()
+                .map(|tags| tags.iter().filter_map(|tag| tag.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            Some((id, ChampionInfo {
+                name: champion["name"].as_str()?.to_string(),
+                tags,
+                attack: champion["info"]["attack"].as_i64().unwrap_or(0),
+                magic: champion["info"]["magic"].as_i64().unwrap_or(0),
+            }))
+        })
         .collect();
-    Some(names)
+    Some(champions)
 }
 
 /// What players call a queue.
@@ -315,15 +341,15 @@ fn live_game(platform: &str, puuid: &str, key: &str) -> Option<LiveGame> {
             return None;
         }
     };
-    Some(describe_live_game(&game, puuid, champion_names()))
+    Some(describe_live_game(&game, puuid, champions()))
 }
 
-fn describe_live_game(game: &ActiveGame, puuid: &str, names: Option<&HashMap<i64, String>>) -> LiveGame {
+fn describe_live_game(game: &ActiveGame, puuid: &str, champions: Option<&HashMap<i64, ChampionInfo>>) -> LiveGame {
     let champion = game
         .participants
         .iter()
         .find(|player| player.puuid.as_deref() == Some(puuid))
-        .and_then(|player| names?.get(&player.champion_id).cloned());
+        .and_then(|player| champions?.get(&player.champion_id).map(|champion| champion.name.clone()));
     LiveGame {
         queue: queue_name(game.game_queue_config_id).to_string(),
         champion,
@@ -350,6 +376,7 @@ fn ranked_games(route: &Route, puuid: &str, key: &str, count: usize) -> Result<(
         if let Some(me) = me.filter(|p| !p.game_ended_in_early_surrender) {
             games.push(Game {
                 champion: me.champion_name,
+                champion_id: me.champion_id,
                 win: me.win,
                 kills: me.kills,
                 deaths: me.deaths,
@@ -383,6 +410,37 @@ pub struct ScoutReport {
     pub streak: i64,
     /// Roles in those games, most played first.
     pub roles: Vec<RoleCount>,
+    /// Mastery points by champion id. Empty when they couldn't be read.
+    #[serde(default)]
+    pub mastery: HashMap<i64, i64>,
+    /// How many of those latest games were on each champion, by champion id.
+    #[serde(rename = "recentChampions", default)]
+    pub recent_champions: HashMap<i64, i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Mastery {
+    champion_id: i64,
+    champion_points: i64,
+}
+
+/// A player's mastery points on every champion. Never fails a lookup: without them the
+/// team read simply can't judge champion picks.
+fn masteries(route: &Route, puuid: &str, key: &str) -> HashMap<i64, i64> {
+    let url = format!(
+        "https://{}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{}",
+        route.platform,
+        urlencoding::encode(puuid),
+    );
+    match get_if_found::<Vec<Mastery>>(&url, key) {
+        Ok(Some(list)) => list.into_iter().map(|mastery| (mastery.champion_id, mastery.champion_points)).collect(),
+        Ok(None) => HashMap::new(),
+        Err(_) => {
+            println!("[Riot] Champion mastery couldn't be read");
+            HashMap::new()
+        }
+    }
 }
 
 pub fn scout(riot_id: &str, region: &str, key: &str) -> Result<ScoutReport, RiotError> {
@@ -404,7 +462,9 @@ pub fn scout(riot_id: &str, region: &str, key: &str) -> Result<ScoutReport, Riot
         "Rank",
     )?;
     let (games, _) = ranked_games(&route, &account.puuid, key, SCOUT_MATCH_COUNT)?;
-    Ok(scout_report(riot_id, rank_for(&entries, "RANKED_SOLO_5x5"), &games))
+    let mut report = scout_report(riot_id, rank_for(&entries, "RANKED_SOLO_5x5"), &games);
+    report.mastery = masteries(&route, &account.puuid, key);
+    Ok(report)
 }
 
 fn scout_report(riot_id: &str, solo: RankInfo, games: &[Game]) -> ScoutReport {
@@ -418,6 +478,11 @@ fn scout_report(riot_id: &str, solo: RankInfo, games: &[Game]) -> ScoutReport {
     let mut roles: Vec<RoleCount> = tally.into_iter().map(|(role, games)| RoleCount { role: role.to_string(), games }).collect();
     roles.sort_by(|a, b| b.games.cmp(&a.games).then(a.role.cmp(&b.role)));
 
+    let mut recent_champions: HashMap<i64, i64> = HashMap::new();
+    for game in games.iter().filter(|game| game.champion_id != 0) {
+        *recent_champions.entry(game.champion_id).or_default() += 1;
+    }
+
     ScoutReport {
         riot_id: riot_id.to_string(),
         solo,
@@ -425,6 +490,8 @@ fn scout_report(riot_id: &str, solo: RankInfo, games: &[Game]) -> ScoutReport {
         recent_wins: games.iter().filter(|game| game.win).count() as i64,
         streak: if latest == Some(false) { -run } else { run },
         roles,
+        mastery: HashMap::new(),
+        recent_champions,
     }
 }
 
@@ -644,9 +711,9 @@ mod tests {
     #[test]
     fn recent_stats_summarises_the_games() {
         let games = [
-            Game { champion: "MonkeyKing".into(), win: true, kills: 10, deaths: 2, assists: 6, role: "MIDDLE".into() },
-            Game { champion: "Ahri".into(), win: false, kills: 2, deaths: 4, assists: 4, role: "MIDDLE".into() },
-            Game { champion: "Ahri".into(), win: true, kills: 0, deaths: 0, assists: 2, role: "TOP".into() },
+            Game { champion: "MonkeyKing".into(), win: true, kills: 10, deaths: 2, assists: 6, role: "MIDDLE".into(), ..Game::default() },
+            Game { champion: "Ahri".into(), win: false, kills: 2, deaths: 4, assists: 4, role: "MIDDLE".into(), ..Game::default() },
+            Game { champion: "Ahri".into(), win: true, kills: 0, deaths: 0, assists: 2, role: "TOP".into(), ..Game::default() },
         ];
         let r = recent_stats(&games).unwrap();
         assert_eq!((r.games, r.wins, r.losses), (3, 2, 1));
@@ -670,7 +737,8 @@ mod tests {
                 { "puuid": "me", "championId": 777 }
             ]
         }"#).unwrap();
-        let names = parse_champion_names(r#"{"data":{"Yone":{"key":"777","name":"Yone"},"Annie":{"key":"1","name":"Annie"}}}"#).unwrap();
+        let names = parse_champions(r#"{"data":{"Yone":{"key":"777","name":"Yone","tags":["Fighter","Assassin"],"info":{"attack":8,"magic":4}},"Annie":{"key":"1","name":"Annie"}}}"#).unwrap();
+        assert_eq!(names[&777], ChampionInfo { name: "Yone".into(), tags: vec!["Fighter".into(), "Assassin".into()], attack: 8, magic: 4 });
 
         let live = describe_live_game(&game, "me", Some(&names));
         assert_eq!(live, LiveGame { queue: "Ranked Solo/Duo".into(), champion: Some("Yone".into()), started_at: 1793870000000 });
@@ -690,7 +758,7 @@ mod tests {
 
     #[test]
     fn a_scout_report_counts_form_streak_and_roles() {
-        let game = |win: bool, role: &str| Game { win, role: role.to_string(), ..Game::default() };
+        let game = |win: bool, role: &str| Game { win, role: role.to_string(), champion_id: if role == "TOP" { 54 } else { 777 }, ..Game::default() };
         let games = [game(false, "MIDDLE"), game(false, "MIDDLE"), game(true, "TOP"), game(true, "MIDDLE"), game(false, "")];
 
         let report = scout_report("Sample#TEST", RankInfo::unranked(), &games);
@@ -700,6 +768,7 @@ mod tests {
             RoleCount { role: "MIDDLE".into(), games: 3 },
             RoleCount { role: "TOP".into(), games: 1 },
         ]);
+        assert_eq!((report.recent_champions[&777], report.recent_champions[&54]), (4, 1));
         let none = scout_report("Sample#TEST", RankInfo::unranked(), &[]);
         assert_eq!((none.recent_games, none.streak, none.roles.len()), (0, 0, 0));
     }

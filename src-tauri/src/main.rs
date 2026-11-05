@@ -101,6 +101,7 @@ fn main() {
             commands::backup::import_backup,
             commands::backup::restore_backup,
             commands::lobby::get_lobby_view,
+            commands::lobby::get_team_picks,
             commands::scout::scout_player,
             commands::scout::read_team,
             commands::auto_accept::set_auto_accept_enabled,
