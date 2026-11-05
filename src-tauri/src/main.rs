@@ -5,6 +5,7 @@ mod commands;
 mod encryption;
 mod launcher;
 mod riot_api;
+mod riot_install;
 mod scraper;
 mod session;
 mod storage;

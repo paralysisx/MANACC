@@ -5,17 +5,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[cfg(target_os = "windows")]
-use winreg::enums::*;
-#[cfg(target_os = "windows")]
-use winreg::RegKey;
-
-const LEAGUE_LOCKFILE_FALLBACKS: &[&str] = &[
-    r"C:\Riot Games\League of Legends\lockfile",
-    r"C:\Program Files\Riot Games\League of Legends\lockfile",
-    r"C:\Program Files (x86)\Riot Games\League of Legends\lockfile",
-];
-
 #[derive(Debug)]
 pub(crate) struct LcuLockfile {
     pub(crate) port: u16,
@@ -57,6 +46,7 @@ pub fn set_auto_accept_enabled(enabled: bool) -> Result<bool, String> {
             // too expensive to repeat on every poll.
             let client = match reqwest::blocking::Client::builder()
                 .danger_accept_invalid_certs(true)
+                .no_proxy()
                 .build()
             {
                 Ok(c) => c,
@@ -183,29 +173,9 @@ fn lcu_get_json(
     serde_json::from_str::<serde_json::Value>(&text).map_err(|e| format!("JSON failed: {e}"))
 }
 
-#[cfg(target_os = "windows")]
+/// The running League client's lockfile, wherever League is installed.
 pub(crate) fn find_lockfile_path() -> Option<PathBuf> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Riot Games\League of Legends") {
-        if let Ok(loc) = key.get_value::<String, _>("Location") {
-            let p = PathBuf::from(loc).join("lockfile");
-            if p.exists() {
-                return Some(p);
-            }
-        }
-    }
-    for path in LEAGUE_LOCKFILE_FALLBACKS {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    None
-}
-
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn find_lockfile_path() -> Option<PathBuf> {
-    None
+    crate::riot_install::league_lockfile()
 }
 
 pub(crate) fn read_lockfile(path: &PathBuf) -> Option<LcuLockfile> {

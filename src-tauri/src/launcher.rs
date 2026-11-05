@@ -16,13 +16,6 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-// Known fallback install paths for Riot Client
-const RIOT_CLIENT_FALLBACKS: &[&str] = &[
-    r"C:\Riot Games\Riot Client\RiotClientServices.exe",
-    r"C:\Program Files\Riot Games\Riot Client\RiotClientServices.exe",
-    r"C:\Program Files (x86)\Riot Games\Riot Client\RiotClientServices.exe",
-];
-
 const CLIENT_START_TIMEOUT: Duration = Duration::from_secs(60);
 const FORM_TIMEOUT: Duration = Duration::from_secs(20);
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(45);
@@ -53,27 +46,24 @@ impl Drop for LaunchAccount {
 
 // ─── Path discovery ───────────────────────────────────────────────────────────
 
-#[cfg(target_os = "windows")]
 fn find_riot_client_path() -> Option<PathBuf> {
-    use winreg::enums::*;
-    use winreg::RegKey;
-
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Riot Games\Riot Client") {
-        if let Ok(loc) = key.get_value::<String, _>("InstallLocation") {
-            let p = PathBuf::from(loc).join("RiotClientServices.exe");
-            if p.exists() { return Some(p); }
-        }
-    }
-    for path in RIOT_CLIENT_FALLBACKS {
-        let p = PathBuf::from(path);
-        if p.exists() { return Some(p); }
-    }
-    None
+    crate::riot_install::riot_client_exe()
 }
 
-#[cfg(not(target_os = "windows"))]
-fn find_riot_client_path() -> Option<PathBuf> { None }
+/// The folder a running program was started from, by its file name.
+pub fn folder_of_running(program: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    return ui::process_folder(program);
+    #[cfg(not(target_os = "windows"))]
+    return { let _ = program; None };
+}
+
+/// The running Riot Client's local port and password. Both change every time it starts.
+pub(crate) fn riot_client_local() -> Option<(u16, String)> {
+    let lockfile = dirs::data_local_dir()?
+        .join("Riot Games").join("Riot Client").join("Config").join("lockfile");
+    parse_lockfile(&std::fs::read_to_string(lockfile).ok()?)
+}
 
 /// Opens the Riot Client, or asks the running one to launch League.
 fn start_riot_client(exe: &PathBuf, launch_league: bool) -> Result<(), String> {
@@ -99,6 +89,8 @@ impl LocalApi {
         reqwest::blocking::Client::builder()
             // The client serves a self-signed certificate on localhost.
             .danger_accept_invalid_certs(true)
+            // Never through a system proxy or VPN: the client is on this PC.
+            .no_proxy()
             .build()
             .map(|http| LocalApi { http })
             .map_err(|e| format!("HTTP client error: {e}"))
@@ -109,10 +101,7 @@ impl LocalApi {
     }
 
     fn request_within(&self, timeout: Duration, method: reqwest::Method, path: &str, json: Option<&str>) -> Option<(u16, Value)> {
-        // The port and password change every time the client starts.
-        let lockfile = dirs::data_local_dir()?
-            .join("Riot Games").join("Riot Client").join("Config").join("lockfile");
-        let (port, password) = parse_lockfile(&std::fs::read_to_string(lockfile).ok()?)?;
+        let (port, password) = riot_client_local()?;
         let mut request = self.http
             .request(method, format!("https://127.0.0.1:{port}{path}"))
             .timeout(timeout)
@@ -363,7 +352,11 @@ fn launch_accepted(status: u16) -> bool {
 #[cfg(target_os = "windows")]
 mod ui {
     use std::time::{Duration, Instant};
-    use windows::core::BSTR;
+    use std::path::PathBuf;
+    use windows::core::{BSTR, PWSTR};
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
     use windows::Win32::Foundation::{CloseHandle, HWND, RPC_E_CHANGED_MODE};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
@@ -446,6 +439,21 @@ mod ui {
 
     pub fn process_running(name: &str) -> bool {
         processes().iter().any(|(_, exe)| exe.eq_ignore_ascii_case(name))
+    }
+
+    /// The folder a running program's file is in. Asking for the path needs only the
+    /// lightest access, which Windows also gives for a program run as administrator.
+    pub fn process_folder(name: &str) -> Option<PathBuf> {
+        let pid = processes().into_iter().find(|(_, exe)| exe.eq_ignore_ascii_case(name))?.0;
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+            let mut buffer = [0u16; 1024];
+            let mut len = buffer.len() as u32;
+            let asked = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, PWSTR(buffer.as_mut_ptr()), &mut len);
+            let _ = CloseHandle(process);
+            asked.ok()?;
+            PathBuf::from(String::from_utf16_lossy(&buffer[..len as usize])).parent().map(PathBuf::from)
+        }
     }
 
     fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {

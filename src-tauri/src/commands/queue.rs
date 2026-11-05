@@ -409,6 +409,8 @@ fn queue_up_in(
 fn queue_up_blocking(queue: Queue, roles: Option<Roles>, riot_id: String) -> Result<String, String> {
     let client = Client::builder()
         .danger_accept_invalid_certs(true)
+        // Never through a system proxy or VPN: League is on this PC.
+        .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| format!("Couldn't reach League: {e}"))?;

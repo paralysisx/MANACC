@@ -6,10 +6,6 @@ use std::sync::Mutex;
 use tauri::State;
 
 #[cfg(target_os = "windows")]
-use winreg::enums::*;
-#[cfg(target_os = "windows")]
-use winreg::RegKey;
-#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 #[derive(Debug, Serialize)]
@@ -70,12 +66,6 @@ struct ChampSelectIdentity {
     summoner_id: Option<u64>,
 }
 
-const LEAGUE_LOCKFILE_FALLBACKS: &[&str] = &[
-    r"C:\Riot Games\League of Legends\lockfile",
-    r"C:\Program Files\Riot Games\League of Legends\lockfile",
-    r"C:\Program Files (x86)\Riot Games\League of Legends\lockfile",
-];
-
 #[tauri::command]
 pub fn get_lobby_view(state: State<'_, Mutex<SessionState>>) -> Result<LobbyView, String> {
     let s = state.lock().unwrap();
@@ -84,13 +74,22 @@ pub fn get_lobby_view(state: State<'_, Mutex<SessionState>>) -> Result<LobbyView
     }
     drop(s);
 
-    let lockfile_path =
-        find_lockfile_path().ok_or("League Client lockfile not found. Open Riot/League client first.")?;
+    // The user is waiting on this one: look for League now, even after a recent miss.
+    crate::riot_install::look_again();
+    let lockfile_path = find_lockfile_path().ok_or_else(|| {
+        if crate::launcher::league_running() {
+            "League is open, but VaultX couldn't read its connection file. If League runs as administrator, start VaultX as administrator too."
+        } else {
+            "League isn't open. Open it, then press Refresh."
+        }
+    })?;
     let lockfile = read_lockfile(&lockfile_path)
-        .ok_or("League lockfile found, but it could not be parsed. Restart client and try again.")?;
+        .ok_or("League is still starting. Wait a moment, then press Refresh.")?;
 
     let client = reqwest::blocking::Client::builder()
         .danger_accept_invalid_certs(true)
+        // Never through a system proxy or VPN: League is on this PC.
+        .no_proxy()
         .build()
         .map_err(|e| format!("Failed to create LCU client: {e}"))?;
 
@@ -148,6 +147,7 @@ pub async fn get_team_picks(state: State<'_, Mutex<SessionState>>) -> Result<Vec
         };
         let Ok(client) = reqwest::blocking::Client::builder()
             .danger_accept_invalid_certs(true)
+            .no_proxy()
             .timeout(std::time::Duration::from_secs(3))
             .build()
         else {
@@ -220,8 +220,13 @@ mod cell_tests {
 
 #[cfg(target_os = "windows")]
 fn find_riot_client_info() -> Option<RiotClientInfo> {
-    // Try PowerShell first (always UTF-8), then wmic as fallback
-    find_riot_client_info_powershell()
+    // The Riot Client's own lockfile has the same port and password League was started
+    // with, and reading it needs no other program. Asking Windows for League's command
+    // line is the fallback: it fails when League runs as administrator, where PowerShell
+    // is blocked, and wmic is gone from current Windows.
+    crate::launcher::riot_client_local()
+        .map(|(port, token)| RiotClientInfo { port, token })
+        .or_else(find_riot_client_info_powershell)
         .or_else(find_riot_client_info_wmic)
 }
 
@@ -319,29 +324,8 @@ fn extract_cmdline_arg(cmdline: &str, prefix: &str) -> Option<String> {
 
 // ─── Lockfile discovery ──────────────────────────────────────────────────────
 
-#[cfg(target_os = "windows")]
 fn find_lockfile_path() -> Option<PathBuf> {
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Riot Games\League of Legends") {
-        if let Ok(loc) = key.get_value::<String, _>("Location") {
-            let p = PathBuf::from(loc).join("lockfile");
-            if p.exists() {
-                return Some(p);
-            }
-        }
-    }
-    for path in LEAGUE_LOCKFILE_FALLBACKS {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    None
-}
-
-#[cfg(not(target_os = "windows"))]
-fn find_lockfile_path() -> Option<PathBuf> {
-    None
+    crate::riot_install::league_lockfile()
 }
 
 fn read_lockfile(path: &PathBuf) -> Option<LcuLockfile> {
