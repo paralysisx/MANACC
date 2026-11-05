@@ -30,6 +30,11 @@ pub struct LobbyView {
     pub in_champ_select: bool,
     pub region: String,
     pub players: Vec<LobbyPlayer>,
+    /// The signed-in player's own Riot ID, so they aren't looked up as a teammate.
+    pub me: Option<String>,
+    /// The positions the four teammates were assigned, in no particular order. Names
+    /// in champion select aren't tied to positions. Empty outside draft queues.
+    pub positions: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -97,12 +102,69 @@ pub fn get_lobby_view(state: State<'_, Mutex<SessionState>>) -> Result<LobbyView
         }
     }
 
+    let me = lcu_get_json(&client, &lockfile, "/lol-summoner/v1/current-summoner")
+        .ok()
+        .and_then(|summoner| Some(format!("{}#{}", summoner["gameName"].as_str()?, summoner["tagLine"].as_str()?)));
+    let positions = if in_champ_select {
+        lcu_get_json(&client, &lockfile, "/lol-champ-select/v1/session")
+            .map(|session| teammate_positions(&session))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     Ok(LobbyView {
         in_champ_select,
         phase,
         region,
         players,
+        me,
+        positions,
     })
+}
+
+/// The positions assigned to the teammates in a champion select session, leaving out
+/// the local player's own.
+fn teammate_positions(session: &serde_json::Value) -> Vec<String> {
+    let me = session["localPlayerCellId"].as_i64();
+    session["myTeam"]
+        .as_array()
+        .map(|team| {
+            team.iter()
+                .filter(|member| member["cellId"].as_i64() != me || me.is_none())
+                .filter_map(|member| member["assignedPosition"].as_str())
+                .filter(|position| !position.is_empty())
+                .map(|position| position.to_uppercase())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::teammate_positions;
+
+    #[test]
+    fn teammates_positions_leave_out_the_local_player() {
+        let session = serde_json::json!({
+            "localPlayerCellId": 2,
+            "myTeam": [
+                { "cellId": 0, "assignedPosition": "top" },
+                { "cellId": 1, "assignedPosition": "jungle" },
+                { "cellId": 2, "assignedPosition": "middle" },
+                { "cellId": 3, "assignedPosition": "bottom" },
+                { "cellId": 4, "assignedPosition": "utility" }
+            ]
+        });
+        assert_eq!(teammate_positions(&session), vec!["TOP", "JUNGLE", "BOTTOM", "UTILITY"]);
+    }
+
+    #[test]
+    fn blind_pick_has_no_positions() {
+        let session = serde_json::json!({ "localPlayerCellId": 0, "myTeam": [{ "cellId": 0, "assignedPosition": "" }, { "cellId": 1, "assignedPosition": "" }] });
+        assert!(teammate_positions(&session).is_empty());
+        assert!(teammate_positions(&serde_json::json!({})).is_empty());
+    }
 }
 
 // ─── Process scanning for riotclient port ────────────────────────────────────

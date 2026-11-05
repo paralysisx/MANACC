@@ -41,12 +41,14 @@
       <option value="lowest">Lowest rank</option>
       <option value="region">Region</option>
     </select>
+    <input type="search" id="search-box" placeholder="Search" aria-label="Search accounts" autocomplete="off" spellcheck="false">
     <div class="toolbar-spacer"></div>
     <button class="btn primary" id="add-account-btn">Add account</button>
   </div>
   <div class="cards-scroll">
     <div class="cards" id="account-list"></div>
     <div class="empty hidden" id="empty-state"><strong>No accounts yet</strong><span>Add your first one to get started.</span></div>
+    <div class="empty hidden" id="no-match"><strong>No accounts match</strong><span>Try another search.</span></div>
   </div>
 </template>
 
@@ -69,6 +71,7 @@
       <option value="lowest">Lowest rank</option>
       <option value="region">Region</option>
     </select>
+    <input type="search" id="search-box" placeholder="Search" aria-label="Search accounts" autocomplete="off" spellcheck="false">
     <div class="toolbar-spacer"></div>
     <button class="btn ghost toggle" id="auto-accept-header-btn" title="Automatically accept the match-found screen">Auto-accept</button>
     <button class="btn ghost" id="lobby-viewer-btn">Lobby</button>
@@ -78,6 +81,7 @@
   <div class="list">
     <div id="account-list"></div>
     <div class="empty hidden" id="empty-state"><strong>No accounts yet</strong><span>Add your first one to get started.</span></div>
+    <div class="empty hidden" id="no-match"><strong>No accounts match</strong><span>Try another search.</span></div>
   </div>
 </template>
 
@@ -121,6 +125,10 @@
           <option value="flex">Queue Ranked Flex</option>
         </select>
       </label>
+      <label class="field">Tags
+        <input type="text" id="field-tags" placeholder="main, smurf" maxlength="120" autocomplete="off">
+      </label>
+      <label class="check field-check"><input type="checkbox" id="field-pinned"> Pin to the top</label>
       <label class="field queue-role hidden">First role
         <select id="field-role1">
           <option value="">Choose</option>
@@ -168,6 +176,21 @@
       <span class="hint">VaultX restarts to apply this and locks your vault.</span>
       <button class="btn primary" id="mode-restart-btn">Restart</button>
     </div>
+    <div class="field">Theme
+      <div class="segmented four" id="theme-picker">
+        <button data-theme="midnight">Midnight</button>
+        <button data-theme="violet">Violet</button>
+        <button data-theme="galaxy">Galaxy</button>
+        <button data-theme="starry">Starry</button>
+      </div>
+    </div>
+    <div class="field">Backup
+      <div class="backup-row">
+        <button class="btn" id="backup-export-btn">Back up vault</button>
+        <button class="btn" id="backup-import-btn">Import from backup</button>
+      </div>
+      <span class="hint" id="backup-status">A backup is one encrypted file. It opens with the PIN you have now.</span>
+    </div>
     <label class="check"><input type="checkbox" id="startup-toggle"> Launch on Windows startup</label>
     <p class="hint" id="update-status-text"></p>
     <div class="modal-actions">
@@ -180,6 +203,20 @@
 </div>
 
 <!-- Delete confirm -->
+<!-- PIN for a backup being imported -->
+<div class="overlay hidden" id="backup-pin-modal">
+  <div class="modal">
+    <h3>Import from backup</h3>
+    <p class="hint" id="backup-pin-file"></p>
+    <input type="password" id="backup-pin-input" placeholder="PIN of the backup" aria-label="PIN of the backup" autocomplete="off">
+    <p id="backup-pin-error" class="error hidden"></p>
+    <div class="modal-actions">
+      <button class="btn" id="backup-pin-cancel">Cancel</button>
+      <button class="btn primary" id="backup-pin-ok">Import</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay hidden" id="delete-modal">
   <div class="modal">
     <p id="delete-modal-msg"></p>
@@ -192,9 +229,10 @@
 
 <!-- Lobby -->
 <div class="overlay hidden" id="lobby-modal">
-  <div class="modal wide">
+  <div class="modal wide lobby">
     <h3>Lobby</h3>
     <p class="hint" id="lobby-meta"></p>
+    <div class="team-read hidden" id="lobby-read"></div>
     <div class="lobby-list" id="lobby-list"></div>
     <p id="lobby-error" class="error hidden"></p>
     <div class="modal-actions">

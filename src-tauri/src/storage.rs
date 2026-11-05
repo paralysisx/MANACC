@@ -6,7 +6,7 @@
 
 use crate::encryption::{self, VaultEnvelope};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The in-memory vault structure (decrypted).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -26,6 +26,33 @@ pub struct Account {
     pub stats:      Option<serde_json::Value>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    /// The user's own labels, like "main" or "smurf".
+    #[serde(default)]
+    pub tags:       Vec<String>,
+    /// Pinned accounts are listed first.
+    #[serde(default)]
+    pub pinned:     bool,
+    /// Solo/Duo rank readings over time, oldest first. One is added when the rank changes.
+    #[serde(rename = "rankHistory", default)]
+    pub rank_history: Vec<RankPoint>,
+}
+
+/// The Solo/Duo rank at one moment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RankPoint {
+    /// Unix seconds.
+    pub at:       u64,
+    pub tier:     String,
+    pub division: String,
+    pub lp:       i64,
+}
+
+/// Why a vault file couldn't be opened.
+#[derive(Debug, PartialEq)]
+pub enum OpenError {
+    /// The file is missing, unreadable, or not a vault at all.
+    NotAVault(String),
+    WrongPassword,
 }
 
 fn vault_path() -> PathBuf {
@@ -62,20 +89,51 @@ pub fn create_vault(password: &str) -> Result<(Vec<u8>, String), String> {
 /// Open an existing vault; derive key from the stored salt + provided password.
 /// Returns (key_bytes, salt_hex, vault_data) on success.
 pub fn open_vault(password: &str) -> Result<(Vec<u8>, String, VaultData), String> {
-    let path = vault_path();
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Cannot read vault: {e}"))?;
+    open_file(&vault_path(), password).map_err(|e| match e {
+        OpenError::NotAVault(reason) => reason,
+        OpenError::WrongPassword => "WRONG_PASSWORD_OR_CORRUPT".to_string(),
+    })
+}
+
+/// Opens any vault file, such as a backup, with the PIN it was saved under.
+fn open_file(path: &Path, password: &str) -> Result<(Vec<u8>, String, VaultData), OpenError> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| OpenError::NotAVault(format!("Cannot read vault: {e}")))?;
     let envelope: VaultEnvelope = serde_json::from_str(&raw)
-        .map_err(|e| format!("Vault file corrupted: {e}"))?;
+        .map_err(|e| OpenError::NotAVault(format!("Vault file corrupted: {e}")))?;
 
     let salt_hex = envelope.salt.clone();
     let key = encryption::derive_key(password, &salt_hex);
 
-    let plaintext = encryption::decrypt(&envelope, &key)?;
-    let data: VaultData = serde_json::from_slice(&plaintext)
-        .map_err(|_| "WRONG_PASSWORD_OR_CORRUPT".to_string())?;
+    let plaintext = encryption::decrypt(&envelope, &key).map_err(|_| OpenError::WrongPassword)?;
+    let data: VaultData = serde_json::from_slice(&plaintext).map_err(|_| OpenError::WrongPassword)?;
 
     Ok((key, salt_hex, data))
+}
+
+/// A backup is a copy of the vault file: still encrypted, opened with the same PIN.
+pub fn copy_vault_to(to: &Path) -> Result<(), String> {
+    std::fs::copy(vault_path(), to).map(|_| ()).map_err(|e| format!("Couldn't write the backup: {e}"))
+}
+
+/// The accounts in a backup file.
+pub fn read_backup(path: &Path, password: &str) -> Result<VaultData, OpenError> {
+    open_file(path, password).map(|(_, _, data)| data)
+}
+
+/// Makes a backup the vault on this PC. Only when there is no vault yet, so nothing
+/// can be overwritten. Returns what unlocking it gives.
+pub fn restore_vault(from: &Path, password: &str) -> Result<(Vec<u8>, String, VaultData), OpenError> {
+    let path = vault_path();
+    if path.exists() {
+        return Err(OpenError::NotAVault("A vault already exists on this PC.".to_string()));
+    }
+    let opened = open_file(from, password)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| OpenError::NotAVault(e.to_string()))?;
+    }
+    std::fs::copy(from, &path).map_err(|e| OpenError::NotAVault(format!("Couldn't copy the backup: {e}")))?;
+    Ok(opened)
 }
 
 /// Re-encrypt the vault with the current key+salt and overwrite the file.

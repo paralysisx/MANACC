@@ -42,6 +42,10 @@ fn keep_saved_data(stats: &mut scraper::SummonerStats, saved: Option<scraper::Su
         stats.recent = saved.recent;
         stats.flex = saved.flex;
     }
+    // "In a game" is never carried over: it is only true at the moment it was read.
+    if stats.last_ranked_at.is_none() {
+        stats.last_ranked_at = saved.last_ranked_at;
+    }
     if stats.flex_champions.is_none() {
         stats.flex_champions = saved.flex_champions;
     }
@@ -94,11 +98,40 @@ async fn fetch_stats(
         .map_err(|e| format!("Stats task failed: {e}"))?
 }
 
+/// How many rank readings are kept per account. One is added per rank change.
+const MAX_RANK_POINTS: usize = 500;
+
+/// Adds a reading when the Solo/Duo rank differs from the last one kept.
+fn record_rank(history: &mut Vec<storage::RankPoint>, solo: &scraper::RankInfo, now: u64) {
+    if solo.tier.is_empty() || solo.tier.eq_ignore_ascii_case("UNRANKED") {
+        return;
+    }
+    let same = history
+        .last()
+        .is_some_and(|last| last.tier == solo.tier && last.division == solo.division && last.lp == solo.lp);
+    if same {
+        return;
+    }
+    history.push(storage::RankPoint { at: now, tier: solo.tier.clone(), division: solo.division.clone(), lp: solo.lp });
+    if history.len() > MAX_RANK_POINTS {
+        history.drain(..history.len() - MAX_RANK_POINTS);
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Saves the stats and returns the account's rank history, with this reading added.
 fn save_stats(
     state: &Mutex<SessionState>,
     id: &str,
+    stats: &scraper::SummonerStats,
     stats_json: &serde_json::Value,
-) -> Result<(), String> {
+) -> Result<Vec<storage::RankPoint>, String> {
     let mut s = state.lock().unwrap();
     // The vault may have been locked during a slow refresh.
     let (Some(key), Some(salt)) = (s.key.clone(), s.salt.clone()) else {
@@ -107,10 +140,14 @@ fn save_stats(
     let Some(vault) = s.vault.as_mut() else {
         return Err("Not authenticated".to_string());
     };
+    let mut history = Vec::new();
     if let Some(acc) = vault.accounts.iter_mut().find(|a| a.id == id) {
         acc.stats = Some(stats_json.clone());
+        record_rank(&mut acc.rank_history, &stats.solo, unix_now());
+        history = acc.rank_history.clone();
     }
-    storage::save_vault(vault, &key, &salt)
+    storage::save_vault(vault, &key, &salt)?;
+    Ok(history)
 }
 
 #[tauri::command]
@@ -132,8 +169,8 @@ pub async fn refresh_stats(
     println!("[Stats] Refreshing: {riot_id} ({region})");
     let stats = fetch_stats(riot_id, region, saved).await?;
     let stats_json = serde_json::to_value(&stats).map_err(|e| e.to_string())?;
-    save_stats(&state, &id, &stats_json)?;
-    Ok(stats_json)
+    let rank_history = save_stats(&state, &id, &stats, &stats_json)?;
+    Ok(serde_json::json!({ "stats": stats_json, "rankHistory": rank_history }))
 }
 
 #[cfg(test)]
@@ -156,7 +193,48 @@ mod tests {
             recent: None,
             flex_champions: None,
             champion_scope: scope.to_string(),
+            last_ranked_at: None,
+            live: None,
         }
+    }
+
+    fn rank(tier: &str, division: &str, lp: i64) -> RankInfo {
+        RankInfo { tier: tier.to_string(), division: division.to_string(), lp, ..RankInfo::unranked() }
+    }
+
+    #[test]
+    fn a_rank_reading_is_kept_only_when_the_rank_changed() {
+        let mut history = Vec::new();
+        record_rank(&mut history, &RankInfo::unranked(), 1);
+        assert!(history.is_empty());
+
+        record_rank(&mut history, &rank("GOLD", "II", 40), 10);
+        record_rank(&mut history, &rank("GOLD", "II", 40), 20);
+        record_rank(&mut history, &rank("GOLD", "II", 61), 30);
+        record_rank(&mut history, &rank("GOLD", "I", 5), 40);
+        let kept: Vec<(u64, i64)> = history.iter().map(|p| (p.at, p.lp)).collect();
+        assert_eq!(kept, vec![(10, 40), (30, 61), (40, 5)]);
+    }
+
+    #[test]
+    fn old_rank_readings_are_dropped_first() {
+        let mut history = Vec::new();
+        for lp in 0..(MAX_RANK_POINTS as i64 + 20) {
+            record_rank(&mut history, &rank("MASTER", "", lp), lp as u64);
+        }
+        assert_eq!(history.len(), MAX_RANK_POINTS);
+        assert_eq!(history.first().unwrap().lp, 20);
+    }
+
+    #[test]
+    fn a_live_game_is_never_carried_over_but_the_last_game_time_is() {
+        let mut saved = stats("Yasuo", "season");
+        saved.last_ranked_at = Some(123);
+        saved.live = Some(scraper::LiveGame { queue: "ARAM".into(), champion: None, started_at: 1 });
+        let mut new = stats("Talon", "season");
+        keep_saved_data(&mut new, Some(saved));
+        assert_eq!(new.last_ranked_at, Some(123));
+        assert_eq!(new.live, None);
     }
 
     fn champs(name: &str) -> Vec<ChampionStat> {

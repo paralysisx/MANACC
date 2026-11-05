@@ -3,16 +3,19 @@
 /// The key is read at runtime and never compiled in: Riot's policy forbids shipping
 /// it in a binary, so a public release needs a small server to hold it instead.
 
-use crate::scraper::{self, ChampionStat, RankInfo, RecentMatch, RecentStats, SummonerStats};
+use crate::scraper::{self, ChampionStat, LiveGame, RankInfo, RecentMatch, RecentStats, SummonerStats};
 use reqwest::blocking::Client;
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Ranked solo games shown on a card. Each one costs a request.
 const MATCH_COUNT: usize = 10;
+/// Ranked solo games read per teammate in champion select: enough to see form and
+/// roles, few enough to look up a whole team within the rate limit.
+const SCOUT_MATCH_COUNT: usize = 6;
 const TOP_CHAMPION_COUNT: usize = 5;
 const QUEUE_RANKED_SOLO: u32 = 420;
 /// Longest wait for a rate limit to clear (the longest limit window is 2 minutes).
@@ -71,18 +74,19 @@ struct Route {
     matches: &'static str,
 }
 
+/// Accepts the region names the app uses and the ones the League client reports.
 fn route(region: &str) -> Option<Route> {
     let (platform, account, matches) = match region.to_uppercase().as_str() {
-        "NA"   => ("na1",  "americas", "americas"),
-        "BR"   => ("br1",  "americas", "americas"),
-        "LAN"  => ("la1",  "americas", "americas"),
-        "LAS"  => ("la2",  "americas", "americas"),
-        "OCE"  => ("oc1",  "americas", "sea"),
+        "NA" | "NA1" => ("na1",  "americas", "americas"),
+        "BR" | "BR1" => ("br1",  "americas", "americas"),
+        "LAN" | "LA1" => ("la1",  "americas", "americas"),
+        "LAS" | "LA2" => ("la2",  "americas", "americas"),
+        "OCE" | "OC1" => ("oc1",  "americas", "sea"),
         "KR"   => ("kr",   "asia",     "asia"),
-        "JP"   => ("jp1",  "asia",     "asia"),
-        "EUW"  => ("euw1", "europe",   "europe"),
-        "EUNE" => ("eun1", "europe",   "europe"),
-        "TR"   => ("tr1",  "europe",   "europe"),
+        "JP" | "JP1" => ("jp1",  "asia",     "asia"),
+        "EUW" | "EUW1" => ("euw1", "europe",   "europe"),
+        "EUNE" | "EUN1" => ("eun1", "europe",   "europe"),
+        "TR" | "TR1" => ("tr1",  "europe",   "europe"),
         "RU"   => ("ru",   "europe",   "europe"),
         _ => return None,
     };
@@ -121,8 +125,36 @@ struct Match {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MatchInfo {
     participants: Vec<Participant>,
+    /// Unix milliseconds. Missing on very old games, which have only a creation time.
+    #[serde(default)]
+    game_end_timestamp: Option<i64>,
+    #[serde(default)]
+    game_creation: Option<i64>,
+}
+
+/// A game in progress, from the spectator API.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActiveGame {
+    #[serde(default)]
+    game_queue_config_id: Option<i64>,
+    #[serde(default)]
+    game_start_time: i64,
+    #[serde(default)]
+    participants: Vec<ActiveParticipant>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActiveParticipant {
+    /// Hidden for players in streamer mode.
+    #[serde(default)]
+    puuid: Option<String>,
+    #[serde(default)]
+    champion_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -171,6 +203,11 @@ fn client() -> Result<&'static Client, String> {
 
 /// GET a Riot endpoint, waiting out rate limits. `what` names the thing for a 404.
 fn get<T: DeserializeOwned>(url: &str, key: &str, what: &str) -> Result<T, RiotError> {
+    get_if_found(url, key)?.ok_or_else(|| RiotError::Other(format!("{what} not found")))
+}
+
+/// Like `get`, but a 404 is an answer rather than an error: `None`.
+fn get_if_found<T: DeserializeOwned>(url: &str, key: &str) -> Result<Option<T>, RiotError> {
     let mut waited = 0;
     loop {
         let response = client()?
@@ -182,10 +219,10 @@ fn get<T: DeserializeOwned>(url: &str, key: &str, what: &str) -> Result<T, RiotE
         return match response.status().as_u16() {
             200 => {
                 let text = response.text().map_err(|e| format!("Riot API read failed: {}", e.without_url()))?;
-                Ok(serde_json::from_str(&text).map_err(|e| format!("Unexpected Riot API response: {e}"))?)
+                Ok(Some(serde_json::from_str(&text).map_err(|e| format!("Unexpected Riot API response: {e}"))?))
             }
             401 | 403 => Err(RiotError::BadKey),
-            404 => Err(RiotError::Other(format!("{what} not found"))),
+            404 => Ok(None),
             429 => {
                 let wait = response
                     .headers()
@@ -220,6 +257,177 @@ fn latest_ddragon_version() -> Option<&'static str> {
         .as_deref()
 }
 
+/// Champion names by their numeric id, from Data Dragon. Fetched once, when first needed.
+fn champion_names() -> Option<&'static HashMap<i64, String>> {
+    static NAMES: OnceLock<Option<HashMap<i64, String>>> = OnceLock::new();
+    NAMES
+        .get_or_init(|| {
+            let version = latest_ddragon_version()?;
+            let text = client().ok()?
+                .get(format!("https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"))
+                .send().ok()?
+                .text().ok()?;
+            parse_champion_names(&text)
+        })
+        .as_ref()
+}
+
+fn parse_champion_names(json: &str) -> Option<HashMap<i64, String>> {
+    let parsed: serde_json::Value = serde_json::from_str(json).ok()?;
+    let names = parsed["data"]
+        .as_object()?
+        .values()
+        .filter_map(|champion| Some((champion["key"].as_str()?.parse().ok()?, champion["name"].as_str()?.to_string())))
+        .collect();
+    Some(names)
+}
+
+/// What players call a queue.
+fn queue_name(id: Option<i64>) -> &'static str {
+    match id {
+        Some(420) => "Ranked Solo/Duo",
+        Some(440) => "Ranked Flex",
+        Some(400) => "Normal Draft",
+        Some(430) => "Normal Blind",
+        Some(480) => "Swiftplay",
+        Some(490) => "Quickplay",
+        Some(450) => "ARAM",
+        Some(700) => "Clash",
+        Some(900) | Some(1900) => "URF",
+        Some(1700) | Some(1710) => "Arena",
+        Some(0) => "Custom game",
+        _ => "In a game",
+    }
+}
+
+/// The game this player is in right now. Never fails a refresh: anything but a clear
+/// answer counts as "not in a game".
+fn live_game(platform: &str, puuid: &str, key: &str) -> Option<LiveGame> {
+    let url = format!("{platform}/lol/spectator/v5/active-games/by-summoner/{}", urlencoding::encode(puuid));
+    let game: ActiveGame = match get_if_found(&url, key) {
+        Ok(found) => found?,
+        Err(RiotError::BadKey) => {
+            println!("[Riot] This key can't read live games");
+            return None;
+        }
+        Err(RiotError::Other(reason)) => {
+            println!("[Riot] Live game check failed: {reason}");
+            return None;
+        }
+    };
+    Some(describe_live_game(&game, puuid, champion_names()))
+}
+
+fn describe_live_game(game: &ActiveGame, puuid: &str, names: Option<&HashMap<i64, String>>) -> LiveGame {
+    let champion = game
+        .participants
+        .iter()
+        .find(|player| player.puuid.as_deref() == Some(puuid))
+        .and_then(|player| names?.get(&player.champion_id).cloned());
+    LiveGame {
+        queue: queue_name(game.game_queue_config_id).to_string(),
+        champion,
+        started_at: game.game_start_time,
+    }
+}
+
+/// The player's latest ranked Solo/Duo games, newest first, and when the newest ended.
+fn ranked_games(route: &Route, puuid: &str, key: &str, count: usize) -> Result<(Vec<Game>, Option<i64>), RiotError> {
+    let cluster = format!("https://{}.api.riotgames.com/lol/match/v5/matches", route.matches);
+    let match_ids: Vec<String> = get(
+        &format!("{cluster}/by-puuid/{}/ids?queue={QUEUE_RANKED_SOLO}&start=0&count={count}", urlencoding::encode(puuid)),
+        key,
+        "Match list",
+    )?;
+
+    let mut games = Vec::with_capacity(match_ids.len());
+    let mut last_ranked_at: Option<i64> = None;
+    for id in &match_ids {
+        let game: Match = get(&format!("{cluster}/{}", urlencoding::encode(id)), key, "Match")?;
+        last_ranked_at = last_ranked_at.max(game.info.game_end_timestamp.or(game.info.game_creation));
+        let me = game.info.participants.into_iter().find(|p| p.puuid == puuid);
+        // Remakes aren't real games.
+        if let Some(me) = me.filter(|p| !p.game_ended_in_early_surrender) {
+            games.push(Game {
+                champion: me.champion_name,
+                win: me.win,
+                kills: me.kills,
+                deaths: me.deaths,
+                assists: me.assists,
+                role: me.team_position,
+            });
+        }
+    }
+    Ok((games, last_ranked_at))
+}
+
+// ─── Scouting a teammate ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoleCount {
+    pub role: String,
+    pub games: i64,
+}
+
+/// What a quick look at one player gives: Solo/Duo rank and the latest ranked games.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScoutReport {
+    #[serde(rename = "riotId")]
+    pub riot_id: String,
+    pub solo: RankInfo,
+    #[serde(rename = "recentGames")]
+    pub recent_games: i64,
+    #[serde(rename = "recentWins")]
+    pub recent_wins: i64,
+    /// The current run of results: 3 is three wins in a row, -2 is two losses.
+    pub streak: i64,
+    /// Roles in those games, most played first.
+    pub roles: Vec<RoleCount>,
+}
+
+pub fn scout(riot_id: &str, region: &str, key: &str) -> Result<ScoutReport, RiotError> {
+    let route = route(region).ok_or_else(|| format!("Unknown region: {region}"))?;
+    let (game_name, tag_line) = scraper::parse_riot_id(riot_id)?;
+    let account: Account = get(
+        &format!(
+            "https://{}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{}/{}",
+            route.account,
+            urlencoding::encode(game_name),
+            urlencoding::encode(tag_line),
+        ),
+        key,
+        &format!("Riot ID \"{riot_id}\""),
+    )?;
+    let entries: Vec<LeagueEntry> = get(
+        &format!("https://{}.api.riotgames.com/lol/league/v4/entries/by-puuid/{}", route.platform, urlencoding::encode(&account.puuid)),
+        key,
+        "Rank",
+    )?;
+    let (games, _) = ranked_games(&route, &account.puuid, key, SCOUT_MATCH_COUNT)?;
+    Ok(scout_report(riot_id, rank_for(&entries, "RANKED_SOLO_5x5"), &games))
+}
+
+fn scout_report(riot_id: &str, solo: RankInfo, games: &[Game]) -> ScoutReport {
+    let latest = games.first().map(|game| game.win);
+    let run = games.iter().take_while(|game| Some(game.win) == latest).count() as i64;
+
+    let mut tally: HashMap<&str, i64> = HashMap::new();
+    for game in games.iter().filter(|game| !game.role.is_empty()) {
+        *tally.entry(game.role.as_str()).or_default() += 1;
+    }
+    let mut roles: Vec<RoleCount> = tally.into_iter().map(|(role, games)| RoleCount { role: role.to_string(), games }).collect();
+    roles.sort_by(|a, b| b.games.cmp(&a.games).then(a.role.cmp(&b.role)));
+
+    ScoutReport {
+        riot_id: riot_id.to_string(),
+        solo,
+        recent_games: games.len() as i64,
+        recent_wins: games.iter().filter(|game| game.win).count() as i64,
+        streak: if latest == Some(false) { -run } else { run },
+        roles,
+    }
+}
+
 // ─── Main entry point ──────────────────────────────────────────────────────
 
 pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerStats, RiotError> {
@@ -242,29 +450,9 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
     let summoner: Summoner = get(&format!("{platform}/lol/summoner/v4/summoners/by-puuid/{puuid}"), key, "Summoner")?;
     let entries: Vec<LeagueEntry> = get(&format!("{platform}/lol/league/v4/entries/by-puuid/{puuid}"), key, "Rank")?;
 
-    let cluster = format!("https://{}.api.riotgames.com/lol/match/v5/matches", route.matches);
-    let match_ids: Vec<String> = get(
-        &format!("{cluster}/by-puuid/{puuid}/ids?queue={QUEUE_RANKED_SOLO}&start=0&count={MATCH_COUNT}"),
-        key,
-        "Match list",
-    )?;
+    let (games, last_ranked_at) = ranked_games(&route, &account.puuid, key, MATCH_COUNT)?;
 
-    let mut games = Vec::with_capacity(match_ids.len());
-    for id in &match_ids {
-        let game: Match = get(&format!("{cluster}/{}", urlencoding::encode(id)), key, "Match")?;
-        let me = game.info.participants.into_iter().find(|p| p.puuid == account.puuid);
-        // Remakes aren't real games.
-        if let Some(me) = me.filter(|p| !p.game_ended_in_early_surrender) {
-            games.push(Game {
-                champion: me.champion_name,
-                win: me.win,
-                kills: me.kills,
-                deaths: me.deaths,
-                assists: me.assists,
-                role: me.team_position,
-            });
-        }
-    }
+    let live = live_game(&platform, &account.puuid, key);
 
     Ok(SummonerStats {
         icon_url: latest_ddragon_version().map(|version| {
@@ -278,6 +466,8 @@ pub fn fetch_stats(riot_id: &str, region: &str, key: &str) -> Result<SummonerSta
         recent: recent_stats(&games),
         flex_champions: None,
         champion_scope: "recent".to_string(),
+        last_ranked_at,
+        live,
     })
 }
 
@@ -469,6 +659,49 @@ mod tests {
     #[test]
     fn no_games_means_no_recent_stats() {
         assert!(recent_stats(&[]).is_none());
+    }
+
+    #[test]
+    fn a_live_game_names_the_queue_and_the_players_champion() {
+        let game: ActiveGame = serde_json::from_str(r#"{
+            "gameQueueConfigId": 420, "gameStartTime": 1793870000000,
+            "participants": [
+                { "puuid": null, "championId": 1 },
+                { "puuid": "me", "championId": 777 }
+            ]
+        }"#).unwrap();
+        let names = parse_champion_names(r#"{"data":{"Yone":{"key":"777","name":"Yone"},"Annie":{"key":"1","name":"Annie"}}}"#).unwrap();
+
+        let live = describe_live_game(&game, "me", Some(&names));
+        assert_eq!(live, LiveGame { queue: "Ranked Solo/Duo".into(), champion: Some("Yone".into()), started_at: 1793870000000 });
+
+        // No champion list, or a queue this app doesn't know: still "in a game".
+        let bare: ActiveGame = serde_json::from_str(r#"{ "gameQueueConfigId": 9999 }"#).unwrap();
+        assert_eq!(describe_live_game(&bare, "me", None), LiveGame { queue: "In a game".into(), champion: None, started_at: 0 });
+    }
+
+    #[test]
+    fn matches_carry_their_end_time() {
+        let game: Match = serde_json::from_str(r#"{"info":{"participants":[],"gameEndTimestamp":1792169600635,"gameCreation":1792168583474}}"#).unwrap();
+        assert_eq!(game.info.game_end_timestamp.or(game.info.game_creation), Some(1792169600635));
+        let old: Match = serde_json::from_str(r#"{"info":{"participants":[],"gameCreation":5}}"#).unwrap();
+        assert_eq!(old.info.game_end_timestamp.or(old.info.game_creation), Some(5));
+    }
+
+    #[test]
+    fn a_scout_report_counts_form_streak_and_roles() {
+        let game = |win: bool, role: &str| Game { win, role: role.to_string(), ..Game::default() };
+        let games = [game(false, "MIDDLE"), game(false, "MIDDLE"), game(true, "TOP"), game(true, "MIDDLE"), game(false, "")];
+
+        let report = scout_report("Sample#TEST", RankInfo::unranked(), &games);
+
+        assert_eq!((report.recent_games, report.recent_wins, report.streak), (5, 2, -2));
+        assert_eq!(report.roles, vec![
+            RoleCount { role: "MIDDLE".into(), games: 3 },
+            RoleCount { role: "TOP".into(), games: 1 },
+        ]);
+        let none = scout_report("Sample#TEST", RankInfo::unranked(), &[]);
+        assert_eq!((none.recent_games, none.streak, none.roles.len()), (0, 0, 0));
     }
 
     #[test]

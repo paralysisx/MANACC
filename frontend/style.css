@@ -17,6 +17,54 @@
   --success: #4cc38a;
   --danger: #e5484d;
   --radius: 6px;
+  /* What the main buttons are filled with, and the text on them. */
+  --accent: #ededef;
+  --accent-hover: #ffffff;
+  --on-accent: #0e0e10;
+}
+
+/* Ready-made themes. Midnight is the default above. Flat colors only: nothing here moves. */
+:root[data-theme="violet"] {
+  --bg: #0f0b1a;
+  --surface: #171226;
+  --raised: #211a35;
+  --hover: rgba(167, 139, 250, 0.08);
+  --line: rgba(167, 139, 250, 0.13);
+  --line-strong: rgba(167, 139, 250, 0.26);
+  --ink: #efeafc;
+  --dim: #9a90b8;
+  --faint: #6a6187;
+  --accent: #8b5cf6;
+  --accent-hover: #9d75f8;
+  --on-accent: #ffffff;
+}
+:root[data-theme="galaxy"] {
+  --bg: #0a0a0b;
+  --surface: #141113;
+  --raised: #1e181a;
+  --hover: rgba(255, 90, 90, 0.07);
+  --line: rgba(255, 90, 90, 0.12);
+  --line-strong: rgba(255, 90, 90, 0.25);
+  --ink: #f2ecec;
+  --dim: #9b8f90;
+  --faint: #6a5f60;
+  --accent: #d92f36;
+  --accent-hover: #e8474d;
+  --on-accent: #ffffff;
+}
+:root[data-theme="starry"] {
+  --bg: #050b1c;
+  --surface: #0c1735;
+  --raised: #15244e;
+  --hover: rgba(130, 165, 255, 0.09);
+  --line: rgba(130, 165, 255, 0.16);
+  --line-strong: rgba(130, 165, 255, 0.32);
+  --ink: #eaf0ff;
+  --dim: #93a3c7;
+  --faint: #5d6c90;
+  --accent: #f0c869;
+  --accent-hover: #f7d98c;
+  --on-accent: #1d1503;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -200,8 +248,8 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .avatar.medium { width: 52px; height: 52px; font-size: 16px; }
 .card-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .card-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card .card-play { width: 38px; height: 38px; margin-left: 0; flex: none; background: var(--ink); color: #0e0e10; }
-.card .card-play:hover:not(:disabled) { background: #fff; color: #0e0e10; }
+.card .card-play { width: 38px; height: 38px; margin-left: 0; flex: none; background: var(--accent); color: var(--on-accent); }
+.card .card-play:hover:not(:disabled) { background: var(--accent-hover); color: var(--on-accent); }
 .card .region { color: var(--dim); }
 
 .highlights { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
@@ -274,6 +322,10 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .segmented button { height: 32px; color: var(--dim); font-weight: 500; }
 .segmented button:hover { color: var(--ink); }
 .segmented button.active { background: var(--raised); color: var(--ink); }
+.segmented.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.backup-row { display: flex; gap: 6px; }
+.backup-row .btn { flex: 1; }
+#backup-status { overflow-wrap: anywhere; user-select: text; }
 .mode-lines { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
 .restart-row { display: flex; align-items: center; gap: 10px; }
 .restart-row .hint { flex: 1; }
@@ -307,9 +359,10 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .win.close:hover { color: var(--danger); }
 
 /* Toolbar */
+/* Text of different sizes shares one baseline, so the title, count and sort line up. */
 .toolbar {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   flex: none;
   padding: 6px 16px 14px;
@@ -317,8 +370,10 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .toolbar h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 .count { margin-left: 2px; color: var(--faint); font-size: 13px; font-weight: 400; }
 .toolbar select {
+  /* As wide as the chosen option, so the arrow sits next to the word. */
+  field-sizing: content;
   height: 28px;
-  margin-left: 8px;
+  margin-left: 6px;
   padding: 0 4px;
   background: none;
   border-color: transparent;
@@ -338,8 +393,8 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .btn:hover:not(:disabled) { background: var(--raised); border-color: var(--line-strong); }
 .btn.ghost { background: none; border-color: transparent; color: var(--dim); }
 .btn.ghost:hover:not(:disabled) { background: var(--hover); border-color: transparent; color: var(--ink); }
-.btn.primary { background: var(--ink); border-color: var(--ink); color: #0e0e10; font-weight: 500; }
-.btn.primary:hover:not(:disabled) { background: #fff; border-color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover:not(:disabled) { background: rgba(229, 72, 77, 0.12); border-color: rgba(229, 72, 77, 0.35); }
 
@@ -424,7 +479,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   border-radius: 50%;
   color: var(--ink);
 }
-.play:hover:not(:disabled) { background: var(--ink); color: #0e0e10; }
+.play:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
 
 /* Runs only while a request is in flight */
 .busy svg { display: none; }
@@ -496,7 +551,7 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .field input, .field select { color: var(--ink); font-size: 13px; }
 
 .check { display: flex; align-items: center; gap: 8px; }
-.check input { height: 14px; width: 14px; accent-color: var(--ink); }
+.check input { height: 14px; width: 14px; accent-color: var(--accent); }
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .modal-actions .left { margin-right: auto; }
@@ -506,8 +561,29 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 
 /* Lobby */
 .lobby-list { display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; user-select: text; }
-.lobby-list div { padding: 6px 0; border-bottom: 1px solid var(--line); }
-.lobby-list div:last-child { border-bottom: 0; }
+.lobby-list > div { padding: 7px 0; border-bottom: 1px solid var(--line); }
+.lobby-list > div:last-child { border-bottom: 0; }
+.modal.lobby { width: 520px; }
+.lobby-list { padding-right: 4px; }
+.lobby-list::-webkit-scrollbar { width: 8px; }
+.lobby-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.lobby-list::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
+.modal.lobby .lobby-list { max-height: 300px; }
+.lobby-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.lobby-name { min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-rank { flex: none; font-size: 12px; font-weight: 500; }
+.lobby-detail { margin-top: 2px; }
+.lobby-detail:empty { display: none; }
+.you { margin-left: 6px; padding: 0 5px; border-radius: 7px; background: var(--raised); color: var(--dim); font-size: 11px; font-weight: 400; }
+
+/* The team read in champion select */
+.team-read { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--bg); border-radius: 8px; }
+.team-estimate { display: flex; align-items: baseline; gap: 8px; color: var(--dim); font-size: 12px; }
+.team-estimate strong { color: var(--ink); font-size: 22px; font-weight: 600; }
+.team-estimate.good strong { color: var(--success); }
+.team-estimate.bad strong { color: var(--danger); }
+.team-notes { display: flex; flex-direction: column; gap: 2px; list-style: none; color: var(--dim); font-size: 12px; }
+.team-notes li::before { content: "·"; margin-right: 6px; }
 
 /* Toast */
 .toast-container {
@@ -563,3 +639,80 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .login-note { text-align: center; }
 .btn-link { align-self: center; padding: 2px 6px; color: var(--dim); font-size: 12px; }
 .btn-link:hover { color: var(--ink); }
+
+/* Search */
+#search-box {
+  /* Gives way first when the toolbar runs out of room. */
+  flex: 0 1 150px;
+  min-width: 0;
+  width: 150px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0 8px;
+  background: none;
+  font-size: 12px;
+}
+#search-box::placeholder { color: var(--faint); }
+#search-box:focus { background: var(--surface); }
+#search-box::-webkit-search-cancel-button { filter: grayscale(1) brightness(1.6); cursor: pointer; }
+
+/* Tags */
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tag {
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #c8c8cc;
+  font-size: 11px;
+  line-height: 16px;
+}
+.tag:hover { background: rgba(255, 255, 255, 0.2); color: var(--ink); }
+.field-check { align-self: end; height: 32px; color: var(--dim); font-size: 12px; }
+
+/* Pin */
+.js-pin.on { color: var(--accent); }
+.pin-mark { margin-right: 5px; color: var(--accent); font-size: 8px; vertical-align: 2px; }
+
+/* In a game. A still dot: nothing on a card moves by itself. */
+.live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(76, 195, 138, 0.12);
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.live strong { color: var(--success); font-weight: 500; }
+.live span { overflow: hidden; text-overflow: ellipsis; }
+.live-when { margin-left: auto; color: var(--faint); flex: none; }
+.live-dot { flex: none; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.name .live-dot { margin-right: 6px; vertical-align: 1px; }
+
+/* Rank history */
+.trend { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin-top: 4px; color: var(--dim); font-size: 11px; white-space: nowrap; }
+.trend.good { color: var(--success); }
+.trend.bad { color: var(--danger); }
+.spark { flex: none; opacity: 0.9; }
+.ago { color: var(--faint); }
+
+/* Starry: a night sky behind everything. A dusk-to-deep-blue fade, two soft glows, and
+   two star tiles of different sizes so the pattern doesn't visibly repeat. It is a still
+   picture: nothing twinkles or drifts. Low performance mode leaves it out. */
+:root[data-theme="starry"]:not([data-low]) body {
+  background-color: var(--bg);
+  background-image:
+    url("assets/stars-near.svg"),
+    url("assets/stars-far.svg"),
+    radial-gradient(ellipse 75% 60% at 88% -12%, rgba(86, 122, 255, 0.24), transparent 70%),
+    radial-gradient(ellipse 65% 55% at -5% 108%, rgba(150, 96, 255, 0.16), transparent 70%),
+    linear-gradient(180deg, #030713 0%, #06102b 55%, #0a1a45 100%);
+  background-size: 620px 620px, 910px 910px, 100% 100%, 100% 100%, 100% 100%;
+  background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
+}
+/* Cards are slightly see-through, so the sky shows faintly behind them. No blur: that would cost GPU time. */
+:root[data-theme="starry"]:not([data-low]) .card { background: rgba(12, 23, 53, 0.8); border-color: rgba(150, 180, 255, 0.2); }

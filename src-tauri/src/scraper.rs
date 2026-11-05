@@ -94,6 +94,17 @@ pub struct RecentStats {
     pub main_role_games: i64,
 }
 
+/// A game the player is in right now. Only available from the Riot API.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LiveGame {
+    /// The queue's name, like "Ranked Solo/Duo".
+    pub queue: String,
+    pub champion: Option<String>,
+    /// Unix milliseconds; 0 while the game is still loading.
+    #[serde(rename = "startedAt")]
+    pub started_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummonerStats {
     #[serde(rename = "iconUrl")]
@@ -114,6 +125,12 @@ pub struct SummonerStats {
     /// What top_champions covers: "season" from op.gg (Solo/Duo), "recent" from match history.
     #[serde(rename = "championScope", default)]
     pub champion_scope: String,
+    /// When the newest ranked Solo/Duo game ended, in Unix milliseconds.
+    #[serde(rename = "lastRankedAt", default)]
+    pub last_ranked_at: Option<i64>,
+    /// The game in progress when these stats were fetched, if any.
+    #[serde(default)]
+    pub live: Option<LiveGame>,
 }
 
 // ─── Main entry point ──────────────────────────────────────────────────────
@@ -270,6 +287,8 @@ fn parse_from_html(html: &str, riot_id: &str) -> Result<SummonerStats, String> {
         recent: None,
         flex_champions: None,
         champion_scope: "season".to_string(),
+        last_ranked_at: None,
+        live: None,
     })
 }
 

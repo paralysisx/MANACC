@@ -1,5 +1,17 @@
 'use strict';
 
+// ─── Theme ────────────────────────────────────────────────────────────────────
+// Four ready-made palettes. Applied before anything is drawn.
+const THEMES = ['midnight', 'violet', 'galaxy', 'starry'];
+function applyTheme(theme) {
+  const chosen = THEMES.includes(theme) ? theme : 'midnight';
+  if (chosen === 'midnight') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = chosen;
+  return chosen;
+}
+let currentTheme = applyTheme(localStorage.getItem('theme'));
+if (window.__VAULTX_LOW__ === true) document.documentElement.dataset.low = '';
+
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 // Set by Rust before the page loads. Low performance never loads an image.
 const LOW = window.__VAULTX_LOW__ === true;
@@ -20,11 +32,15 @@ let allAccounts = [];
 let sortedAccounts = [];
 let activeLobbyData = null;
 let currentSortMode = localStorage.getItem('accountsSortMode') || 'highest';
+/** What the search box holds, lower-cased. Empty shows every account. */
+let searchQuery = '';
 
 // ─── DOM Refs ─────────────────────────────────────────────────────────────────
 const appRoot        = document.getElementById('app');
 const accountList    = document.getElementById('account-list');
 const emptyState     = document.getElementById('empty-state');
+const noMatch        = document.getElementById('no-match');
+const searchBox      = document.getElementById('search-box');
 const refreshAllBtn  = document.getElementById('refresh-all-btn');
 const sortSelect     = document.getElementById('sort-select');
 const accountModal   = document.getElementById('account-modal');
@@ -147,6 +163,7 @@ const ICONS = {
   check:   icon('<path d="M5 12.500l4.500 4.500L19 7.500"/>'),
   eye:     icon('<path d="M2 12s3.600-7 10-7 10 7 10 7-3.600 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>'),
   eyeOff:  icon('<path d="M3 3l18 18M10.500 5.200A9.800 9.800 0 0 1 12 5c6.400 0 10 7 10 7a17.500 17.500 0 0 1-3.300 4.100M6.600 6.600C3.700 8.500 2 12 2 12s3.600 7 10 7a9.600 9.600 0 0 0 4.300-1"/>'),
+  pin:     icon('<path d="M9 3h6l-1 7 3 3H7l3-3-1-7zM12 13v8"/>'),
   play:    '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.500v15a1 1 0 0 0 1.500.860l12.500-7.500a1 1 0 0 0 0-1.720L8.500 3.640A1 1 0 0 0 7 4.500z"/></svg>',
 };
 
@@ -171,7 +188,7 @@ function buildRow(account) {
   row.dataset.row = account.id;
   row.innerHTML = `
     <div class="cell">
-      <span class="name" title="${esc(account.label)}">${esc(account.label)}</span>
+      <span class="name" title="${esc(account.label)}">${account.stats?.live ? '<span class="live-dot" title="In a game at the last refresh"></span>' : ''}${account.pinned ? '<span class="pin-mark" title="Pinned">●</span>' : ''}${esc(account.label)}</span>
       <span class="sub-line">
         <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
         <span class="region">${esc(account.region)}</span>
@@ -257,7 +274,106 @@ function wrClass(pct) {
   return pct >= 50 ? 'good' : 'bad';
 }
 
-function queueHTML(title, rank) {
+// ─── Rank history ─────────────────────────────────────────────────────────────
+const DAY_SECONDS = 86400;
+
+/** A rank as one number, so readings can be compared: 100 per division, 400 per tier. */
+function ladderValue(point) {
+  const tier = TIER_ORDER[(point.tier || '').toUpperCase()] ?? -1;
+  if (tier < 0) return null;
+  const lp = Number(point.lp || 0);
+  // Master and above share one LP ladder with no divisions.
+  if (tier >= TIER_ORDER.MASTER) return TIER_ORDER.MASTER * 400 + lp;
+  const division = DIVISION_ORDER[(point.division || '').toUpperCase()] ?? 1;
+  return tier * 400 + (division - 1) * 100 + lp;
+}
+
+/**
+ * The LP change over the last week, or since the first reading when there is
+ * less than a week of them, and the readings of the last 30 days for a small line.
+ */
+function rankTrend(history, now = Date.now() / 1000) {
+  const points = (history || [])
+    .map(point => ({ at: point.at, value: ladderValue(point) }))
+    .filter(point => point.value != null);
+  if (points.length < 2) return null;
+
+  const last = points[points.length - 1];
+  const weekAgo = points.filter(point => point.at <= now - 7 * DAY_SECONDS).pop();
+  const from = weekAgo || points[0];
+  const period = weekAgo
+    ? '7d'
+    : `since ${new Date(from.at * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+
+  const start = now - 30 * DAY_SECONDS;
+  const before = points.filter(point => point.at < start).pop();
+  const series = [
+    ...(before ? [{ at: start, value: before.value }] : []),
+    ...points.filter(point => point.at >= start),
+    { at: now, value: last.value },
+  ];
+  return { delta: last.value - from.value, period, series };
+}
+
+function sparklineHTML(series) {
+  const width = 44, height = 14;
+  const values = series.map(point => point.value);
+  const low = Math.min(...values), high = Math.max(...values);
+  const first = series[0].at, span = series[series.length - 1].at - first;
+  const points = series.map(point => {
+    const x = span > 0 ? (point.at - first) / span * width : width;
+    const y = high > low ? height - 1 - (point.value - low) / (high - low) * (height - 2) : height / 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg class="spark" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function trendHTML(history) {
+  const trend = rankTrend(history);
+  if (!trend) return '';
+  const { delta, period, series } = trend;
+  const text = delta === 0 ? `No LP change · ${period}` : `${delta > 0 ? '▲' : '▼'} ${Math.abs(delta)} LP · ${period}`;
+  const tone = delta > 0 ? 'good' : delta < 0 ? 'bad' : '';
+  return `<span class="trend ${tone}" title="Solo/Duo rank over the last 30 days">${sparklineHTML(series)}<span>${esc(text)}</span></span>`;
+}
+
+// ─── Last played and in game ──────────────────────────────────────────────────
+function agoText(ms) {
+  const minutes = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (minutes < 2) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 60) return `${days} days ago`;
+  return `${Math.round(days / 30)} months ago`;
+}
+
+function clockText(when) {
+  return new Date(when).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** A line for a game in progress. It is true as of the last refresh, and says so. */
+function liveHTML(stats) {
+  const live = stats?.live;
+  if (!live) return '';
+  const what = [live.queue === 'In a game' ? null : live.queue, live.champion].filter(Boolean).join(' · ');
+  const started = live.startedAt > 0 ? `started ${clockText(live.startedAt)}` : 'loading in';
+  const seen = stats.fetchedAt ? ` at ${clockText(stats.fetchedAt)}` : '';
+  return `<div class="live" title="Seen in a game at the last refresh${esc(seen)}">
+    <span class="live-dot"></span><strong>In game</strong>${what ? `<span>${esc(what)}</span>` : ''}<span class="live-when">${esc(started)}</span>
+  </div>`;
+}
+
+function tagsHTML(account) {
+  const tags = account.tags || [];
+  if (tags.length === 0) return '';
+  return `<span class="tags">${tags.map(tag =>
+    `<button class="tag js-tag" data-tag="${esc(tag)}" title="Show accounts tagged ${esc(tag)}">${esc(tag)}</button>`).join('')}</span>`;
+}
+
+function queueHTML(title, rank, extra = '') {
   const ranked = isRanked(rank);
   const total = ranked ? rank.wins + rank.losses : 0;
   const pct = total > 0 ? Math.round(rank.wins / total * 100) : null;
@@ -265,12 +381,13 @@ function queueHTML(title, rank) {
     <span class="stat-label">${title}</span>
     <span class="stat-value" style="color:${ranked ? tierColor(rank) : 'var(--dim)'}">${esc(tierName(rank))}</span>
     ${ranked ? `<span class="queue-line"><span>${esc(rank.lp)} LP · ${esc(rank.wins)}W ${esc(rank.losses)}L</span>${pct != null ? `<span class="${wrClass(pct)}">${pct}%</span>` : ''}</span>
-      <span class="wr-track"><span class="wr-fill" style="width:${pct ?? 0}%"></span></span>` : ''}
+      <span class="wr-track"><span class="wr-fill" style="width:${pct ?? 0}%"></span></span>${extra}` : ''}
   </div>`;
 }
 
-function recentHTML(recent) {
+function recentHTML(recent, lastRankedAt) {
   if (!recent) return '';
+  const lastPlayed = lastRankedAt ? `<span class="ago" title="Last ranked Solo/Duo game: ${esc(new Date(lastRankedAt).toLocaleString())}"> · ${esc(agoText(lastRankedAt))}</span>` : '';
   const pct = recent.games > 0 ? Math.round(recent.wins / recent.games * 100) : 0;
 
   const matches = recent.matches || [];
@@ -287,7 +404,7 @@ function recentHTML(recent) {
 
   return `<div class="recent">
     <div class="recent-head">
-      <span class="stat-label">Last ${esc(recent.games)} ranked</span>
+      <span class="stat-label">Last ${esc(recent.games)} ranked${lastPlayed}</span>
       <span class="recent-record">${streakText ? `<span class="streak ${latestWin ? 'good' : 'bad'}" title="Current ${latestWin ? 'win' : 'loss'} streak">${streakText}</span> ` : ''}${esc(recent.wins)}W ${esc(recent.losses)}L <span class="${wrClass(pct)}">${pct}%</span></span>
     </div>
     <div class="games" aria-label="Last ${esc(recent.games)} ranked games, oldest to newest: ${esc(recent.wins)} wins, ${esc(recent.losses)} losses">${games}</div>
@@ -386,18 +503,21 @@ function buildCard(account) {
           ${stats?.summonerLevel != null ? `<span class="stat-sub">Level ${esc(stats.summonerLevel)}</span>` : ''}
           ${profileLinksHTML(account)}
         </span>
+        ${tagsHTML(account)}
       </div>
       <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.label)}" title="${playTitle(id)}">${ICONS.play}</button>
     </div>
 
+    ${liveHTML(stats)}
+
     ${highlightsHTML(stats, queue)}
 
     <div class="queues" title="${esc(updated)}">
-      ${queueHTML('Solo / Duo', solo)}
+      ${queueHTML('Solo / Duo', solo, trendHTML(account.rankHistory))}
       ${queueHTML('Flex', stats?.flex)}
     </div>
 
-    ${recentHTML(stats?.recent)}
+    ${recentHTML(stats?.recent, stats?.lastRankedAt)}
 
     ${champSectionHTML(account, queue)}
 
@@ -408,6 +528,7 @@ function buildCard(account) {
       <button class="card-action js-copy-pw" data-id="${id}" title="Copy password">${ICONS.key}<span>Password</span></button>
       <button class="icon-btn js-reveal" data-id="${id}" aria-label="Show username and password" title="Show username and password">${ICONS.eye}</button>
       <span class="toolbar-spacer"></span>
+      <button class="icon-btn js-pin${account.pinned ? ' on' : ''}" data-id="${id}" aria-pressed="${account.pinned ? 'true' : 'false'}" aria-label="${account.pinned ? 'Unpin' : 'Pin to the top'}" title="${account.pinned ? 'Unpin' : 'Pin to the top'}">${ICONS.pin}</button>
       <button class="icon-btn js-refresh" data-id="${id}" aria-label="Refresh stats" title="Refresh stats">${ICONS.refresh}</button>
       <button class="icon-btn js-edit" data-id="${id}" aria-label="Edit or delete" title="Edit or delete">${ICONS.edit}</button>
     </div>`;
@@ -418,8 +539,12 @@ function buildCard(account) {
 const buildAccount = LOW ? buildRow : buildCard;
 
 function renderList() {
-  accountList.replaceChildren(...sortedAccounts.map(buildAccount));
+  const shown = sortedAccounts.filter(matchesSearch);
+  accountList.replaceChildren(...shown.map(buildAccount));
   emptyState.classList.toggle('hidden', allAccounts.length > 0);
+  noMatch.classList.toggle('hidden', allAccounts.length === 0 || shown.length > 0);
+  // A search hides cards only for a moment, so the window keeps its size.
+  if (!searchQuery) fitWindow();
 }
 
 function sortAccounts() {
@@ -431,7 +556,26 @@ function sortAccounts() {
   } else if (currentSortMode === 'region') {
     sortedAccounts.sort((a, b) => (a.region || '').localeCompare(b.region || '') || a.label.localeCompare(b.label));
   }
+  // Pinned accounts lead, in the same order among themselves. The sort is stable.
+  sortedAccounts.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
 }
+
+/** Every word typed must appear in the label, Riot ID, region or a tag. */
+function matchesSearch(account) {
+  if (!searchQuery) return true;
+  const text = [account.label, account.riotId, account.region, ...(account.tags || [])].join('\n').toLowerCase();
+  return searchQuery.split(/\s+/).every(word => text.includes(word));
+}
+
+function setSearch(text) {
+  searchBox.value = text;
+  searchQuery = text.trim().toLowerCase();
+  renderList();
+}
+searchBox.addEventListener('input', () => setSearch(searchBox.value));
+searchBox.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchBox.value) { e.stopPropagation(); setSearch(''); }
+});
 
 async function renderAccounts() {
   try {
@@ -459,6 +603,27 @@ appRoot.addEventListener('click', async (e) => {
     localStorage.setItem(`champQueue:${accountId}`, queue);
     const acc = allAccounts.find(a => a.id === accountId);
     if (acc) accountList.querySelector(`[data-row="${accountId}"]`)?.replaceWith(buildAccount(acc));
+    return;
+  }
+
+  const tagBtn = e.target.closest('.js-tag');
+  if (tagBtn) {
+    setSearch(tagBtn.dataset.tag);
+    return;
+  }
+
+  const pinBtn = e.target.closest('.js-pin');
+  if (pinBtn) {
+    const account = allAccounts.find(a => a.id === pinBtn.dataset.id);
+    if (!account) return;
+    pinBtn.disabled = true;
+    try {
+      await invoke('update_account', { id: account.id, updates: { pinned: !account.pinned } });
+      await renderAccounts();
+    } catch (err) {
+      pinBtn.disabled = false;
+      showToast(String(err) || 'Could not pin the account', 'error');
+    }
     return;
   }
 
@@ -608,11 +773,13 @@ async function refreshAccount(id) {
   if (btn) { btn.disabled = true; btn.classList.add('busy'); }
 
   try {
-    const stats = await invoke('refresh_stats', { id });
+    const result = await invoke('refresh_stats', { id });
     const acc = allAccounts.find(a => a.id === id);
     if (acc) {
-      acc.stats = stats;
+      acc.stats = result.stats;
+      acc.rankHistory = result.rankHistory;
       accountList.querySelector(`[data-row="${id}"]`)?.replaceWith(buildAccount(acc));
+      if (!refreshingAll && !searchQuery) fitWindow();
     }
     return { ok: true };
   } catch (err) {
@@ -667,31 +834,129 @@ lobbyModal.addEventListener('click', (e) => {
 function closeLobbyViewer() {
   lobbyModal.classList.add('hidden');
   activeLobbyData = null;
+  scoutRun++;
 }
 
-function renderLobbyPlayers(players) {
+/** Each look at a lobby gets a number; a newer one makes the older stop quietly. */
+let scoutRun = 0;
+
+function lobbyName(player) {
+  return (player.gameName && player.tagLine) ? `${player.gameName}#${player.tagLine}` : (player.summonerName || 'Hidden');
+}
+
+function sameRiotId(a, b) {
+  const plain = id => String(id || '').replace(/\s+/g, '').toLowerCase();
+  return !!a && !!b && plain(a) === plain(b);
+}
+
+function renderLobbyPlayers(players, me) {
   if (!players || players.length === 0) {
     lobbyList.innerHTML = '<div class="hint">No players yet. Open this during champ select.</div>';
     return;
   }
-  lobbyList.innerHTML = players.map(p => {
-    const name = (p.gameName && p.tagLine) ? `${p.gameName}#${p.tagLine}` : (p.summonerName || 'Hidden');
-    return `<div>${esc(name)}</div>`;
+  lobbyList.innerHTML = players.map((player, index) => {
+    const name = lobbyName(player);
+    return `<div class="lobby-player" data-player="${index}">
+      <div class="lobby-line">
+        <span class="lobby-name">${esc(name)}${sameRiotId(name, me) ? '<span class="you">you</span>' : ''}</span>
+        <span class="lobby-rank"></span>
+      </div>
+      <div class="lobby-detail hint"></div>
+    </div>`;
   }).join('');
+}
+
+/** A teammate's rank, and one line on their season, latest games and usual roles. */
+function scoutHTML(report) {
+  const solo = report.solo;
+  const ranked = isRanked(solo);
+  const played = ranked ? solo.wins + solo.losses : 0;
+  const rate = played > 0 ? Math.round(solo.wins / played * 100) : null;
+  const run = Math.abs(report.streak) >= 2 ? ` (${report.streak > 0 ? 'W' : 'L'}${Math.abs(report.streak)})` : '';
+  const roles = (report.roles || []).slice(0, 2).map(role => ROLE_NAMES[role.role] || capitalise(role.role)).join(', ');
+
+  const parts = [];
+  if (rate != null) parts.push(`<span class="${wrClass(rate)}">${rate}%</span> over ${esc(played)} games`);
+  if (report.recentGames > 0) parts.push(`last ${esc(report.recentGames)}: ${esc(report.recentWins)}W ${esc(report.recentGames - report.recentWins)}L${run}`);
+  if (roles) parts.push(`plays ${esc(roles)}`);
+  return {
+    rank: `${esc(tierName(solo))}${ranked ? ` · ${esc(solo.lp)} LP` : ''}`,
+    color: ranked ? tierColor(solo) : 'var(--dim)',
+    detail: parts.join(' · ') || 'No ranked Solo/Duo games found',
+  };
+}
+
+function teamReadHTML(team, looked, teammates) {
+  const tone = team.estimate >= 53 ? 'good' : team.estimate <= 47 ? 'bad' : '';
+  const notes = team.notes.map(note =>
+    `<li class="${note.points >= 0.5 ? 'good' : note.points <= -0.5 ? 'bad' : ''}">${esc(note.text)}</li>`).join('');
+  return `<div class="team-estimate ${tone}"><strong>${esc(team.estimate)}%</strong><span>rough win estimate</span></div>
+    <ul class="team-notes">${notes || '<li>Nothing stands out.</li>'}</ul>
+    <p class="hint">From the rank and latest ranked games of ${esc(looked)} of ${esc(teammates)} teammates. The enemy team is unknown, so treat this as a hint.</p>`;
+}
+
+/** In champion select: looks up each teammate in turn, then reads the team as a whole. */
+async function scoutLobby(data) {
+  const run = ++scoutRun;
+  const read = document.getElementById('lobby-read');
+  read.classList.add('hidden');
+  read.innerHTML = '';
+  if (!data.inChampSelect) return;
+
+  const teammates = data.players
+    .map((player, index) => ({ index, riotId: lobbyName(player), named: !!(player.gameName && player.tagLine) }))
+    .filter(mate => mate.named && !sameRiotId(mate.riotId, data.me));
+  if (teammates.length === 0) return;
+
+  const reports = [];
+  for (const mate of teammates) {
+    const row = lobbyList.querySelector(`[data-player="${mate.index}"]`);
+    const detail = row?.querySelector('.lobby-detail');
+    if (detail) detail.innerHTML = `${LOADER}Looking up...`;
+    try {
+      const report = await invoke('scout_player', { riotId: mate.riotId, region: data.region || 'NA' });
+      if (run !== scoutRun) return;
+      reports.push(report);
+      const shown = scoutHTML(report);
+      const rank = row?.querySelector('.lobby-rank');
+      if (rank) { rank.textContent = ''; rank.insertAdjacentHTML('beforeend', shown.rank); rank.style.color = shown.color; }
+      if (detail) detail.innerHTML = shown.detail;
+    } catch (err) {
+      if (run !== scoutRun) return;
+      if (detail) detail.textContent = String(err) || 'No data';
+    }
+  }
+  if (reports.length === 0) return;
+
+  try {
+    const team = await invoke('read_team', { teammates: reports, positions: data.positions || [] });
+    if (run !== scoutRun) return;
+    read.innerHTML = teamReadHTML(team, reports.length, teammates.length);
+    read.classList.remove('hidden');
+  } catch (err) {
+    console.warn('Could not read the team:', err);
+  }
+}
+
+/** Shows a lobby and, in champion select, starts looking up the teammates. */
+function showLobby(data) {
+  activeLobbyData = data;
+  lobbyMeta.textContent = `${data.phase} · ${data.region || 'NA'} · ${data.players.length} players`;
+  renderLobbyPlayers(data.players, data.me);
+  scoutLobby(data);
 }
 
 async function fetchLobby() {
   const refreshBtn = document.getElementById('lobby-refresh-btn');
   refreshBtn.disabled = true;
+  scoutRun++;
   lobbyError.classList.add('hidden');
+  document.getElementById('lobby-read').classList.add('hidden');
   lobbyMeta.innerHTML = `${LOADER}Checking League client...`;
   lobbyList.innerHTML = '';
 
   try {
-    const data = await invoke('get_lobby_view');
-    activeLobbyData = data;
-    lobbyMeta.textContent = `${data.phase} · ${data.region || 'NA'} · ${data.players.length} players`;
-    renderLobbyPlayers(data.players);
+    showLobby(await invoke('get_lobby_view'));
   } catch (err) {
     activeLobbyData = null;
     lobbyMeta.textContent = '';
@@ -878,6 +1143,8 @@ function openEditModal(id) {
   document.getElementById('field-riotid').value   = acc.riotId;
   document.getElementById('field-region').value   = acc.region;
   setQueueFields(queueSettingFor(id));
+  document.getElementById('field-tags').value = (acc.tags || []).join(', ');
+  document.getElementById('field-pinned').checked = !!acc.pinned;
   document.getElementById('field-password').placeholder = 'Leave blank to keep current';
   modalDeleteBtn.classList.remove('hidden');
   accountModal.classList.remove('hidden');
@@ -895,6 +1162,8 @@ function clearModalFields() {
   });
   document.getElementById('field-region').value = 'NA';
   setQueueFields(null);
+  document.getElementById('field-tags').value = '';
+  document.getElementById('field-pinned').checked = false;
   document.getElementById('modal-error').classList.add('hidden');
 }
 
@@ -914,6 +1183,8 @@ async function handleModalSave() {
   const password = document.getElementById('field-password').value;
   const riotId   = document.getElementById('field-riotid').value.trim();
   const region   = document.getElementById('field-region').value;
+  const tags     = document.getElementById('field-tags').value.split(',').map(tag => tag.trim()).filter(Boolean);
+  const pinned   = document.getElementById('field-pinned').checked;
 
   if (!username) return showModalError('Username is required.');
   if (!riotId)   return showModalError('Riot ID is required.');
@@ -932,14 +1203,14 @@ async function handleModalSave() {
 
   try {
     if (id) {
-      const updates = { label, username, riotId, region };
+      const updates = { label, username, riotId, region, tags, pinned };
       if (password) updates.password = password;
       await invoke('update_account', { id, updates });
       saveQueueSetting(id, queueSetting);
       closeModal();
       await renderAccounts();
     } else {
-      const newId = await invoke('add_account', { account: { label, username, password, riotId, region } });
+      const newId = await invoke('add_account', { account: { label, username, password, riotId, region, tags, pinned } });
       saveQueueSetting(newId, queueSetting);
       closeModal();
       await renderAccounts();
@@ -955,7 +1226,93 @@ async function handleModalSave() {
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
+// Theme
+const themeButtons = [...document.querySelectorAll('#theme-picker button')];
+function showTheme() {
+  themeButtons.forEach(button => button.classList.toggle('active', button.dataset.theme === currentTheme));
+}
+themeButtons.forEach(button => button.addEventListener('click', () => {
+  currentTheme = applyTheme(button.dataset.theme);
+  try { localStorage.setItem('theme', currentTheme); } catch {}
+  showTheme();
+}));
+
+// Backup
+const backupStatus = document.getElementById('backup-status');
+const backupPinModal = document.getElementById('backup-pin-modal');
+const backupPinInput = document.getElementById('backup-pin-input');
+const backupPinError = document.getElementById('backup-pin-error');
+let backupPath = null;
+
+document.getElementById('backup-export-btn').addEventListener('click', async (e) => {
+  // Kept here: an event forgets its button once the handler waits.
+  const button = e.currentTarget;
+  button.disabled = true;
+  try {
+    const saved = await invoke('export_backup');
+    if (saved) {
+      backupStatus.textContent = `Saved to ${saved}`;
+      showToast('Backup saved.', 'success');
+    }
+  } catch (err) {
+    showToast(String(err) || 'Could not save the backup', 'error', 8000);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById('backup-import-btn').addEventListener('click', async () => {
+  try {
+    const chosen = await invoke('choose_backup');
+    if (!chosen) return;
+    backupPath = chosen;
+    document.getElementById('backup-pin-file').textContent = chosen.split(/[\\/]/).pop();
+    backupPinInput.value = '';
+    backupPinError.classList.add('hidden');
+    backupPinModal.classList.remove('hidden');
+    backupPinInput.focus();
+  } catch (err) {
+    showToast(String(err) || 'Could not open the backup', 'error', 8000);
+  }
+});
+
+function closeBackupPin() {
+  backupPinModal.classList.add('hidden');
+  backupPinInput.value = '';
+}
+document.getElementById('backup-pin-cancel').addEventListener('click', closeBackupPin);
+backupPinInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('backup-pin-ok').click();
+});
+document.getElementById('backup-pin-ok').addEventListener('click', async (e) => {
+  const password = backupPinInput.value;
+  if (!password) {
+    backupPinError.textContent = 'Enter the PIN of the backup.';
+    backupPinError.classList.remove('hidden');
+    return;
+  }
+  const button = e.currentTarget;
+  button.disabled = true;
+  try {
+    const { added, skipped } = await invoke('import_backup', { path: backupPath, password });
+    closeBackupPin();
+    await renderAccounts();
+    const already = skipped === 1 ? '1 was already here.' : `${skipped} were already here.`;
+    const message = added === 0
+      ? `Nothing to add: ${skipped === 1 ? 'the account is' : `all ${skipped} accounts are`} already here.`
+      : `Added ${added} account${added === 1 ? '' : 's'}.${skipped ? ` ${already}` : ''}`;
+    backupStatus.textContent = message;
+    showToast(message, added ? 'success' : undefined, 6000);
+  } catch (err) {
+    backupPinError.textContent = String(err) || 'Could not import the backup.';
+    backupPinError.classList.remove('hidden');
+  } finally {
+    button.disabled = false;
+  }
+});
+
 document.getElementById('settings-btn').addEventListener('click', () => {
+  showTheme();
   pickMode(LOW);
   settingsPanel.classList.remove('hidden');
 });
@@ -1100,6 +1457,105 @@ function showToast(message, type = 'info', duration = type === 'error' ? 6000 : 
   setTimeout(() => toast.remove(), duration);
 }
 
+// ─── Window size ──────────────────────────────────────────────────────────────
+// The window opens just big enough for the accounts: whole cards only, as many as
+// the screen has room for, so no card is cut in half and no column is left empty.
+// It follows the accounts until the user resizes or maximizes it, then leaves it alone.
+const FIT = LOW
+  ? { itemWidth: 744, gap: 0, minWidth: 760, minSize: [760, 300], startCols: 1, maxCols: 1, emptyHeight: 440 }
+  : { itemWidth: 360, gap: 12, minWidth: 660, minSize: [660, 420], startCols: 3, maxCols: 4, emptyHeight: 520 };
+const SCREEN_MARGIN = 40;
+
+/** The size last set here; null once the user has taken over. */
+let autoSize = null;
+let fitting = Promise.resolve();
+
+/** Works out the window size for the accounts on screen, without resizing anything. */
+function planWindow() {
+  const scroller = accountList.parentElement;
+  const items = [...accountList.children];
+  const style = getComputedStyle(scroller);
+  const sidePad = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const bottomPad = parseFloat(style.paddingBottom);
+  const maxWidth = screen.availWidth - SCREEN_MARGIN;
+  const maxHeight = screen.availHeight - SCREEN_MARGIN;
+  const widthFor = cols => Math.max(FIT.minWidth, sidePad + cols * FIT.itemWidth + (cols - 1) * FIT.gap);
+
+  if (items.length === 0) return { width: widthFor(Math.min(2, FIT.maxCols)), height: FIT.emptyHeight };
+
+  const colsOnScreen = Math.floor((maxWidth - sidePad + FIT.gap) / (FIT.itemWidth + FIT.gap));
+  const maxCols = Math.max(1, Math.min(FIT.maxCols, colsOnScreen, items.length));
+  let plan;
+  // Start at the usual width; go wider only when that shows more accounts.
+  for (let cols = Math.min(FIT.startCols, maxCols); cols <= maxCols; cols++) {
+    const width = widthFor(cols);
+    // Lay the list out as it would be at that width, measure, and put it back.
+    accountList.style.width = `${width - sidePad}px`;
+    const list = accountList.getBoundingClientRect();
+    const rows = new Map();
+    for (const item of items) {
+      const box = item.getBoundingClientRect();
+      const row = Math.round(box.top);
+      rows.set(row, Math.max(rows.get(row) || 0, box.bottom));
+    }
+    accountList.style.width = '';
+
+    const above = list.top + scroller.scrollTop;
+    const heights = [...rows.values()].sort((a, b) => a - b)
+      .map(bottom => Math.ceil(above + (bottom - list.top) + bottomPad));
+    const shown = Math.max(1, heights.filter(height => height <= maxHeight).length);
+    plan = {
+      width,
+      height: Math.max(FIT.minSize[1], Math.min(heights[shown - 1], maxHeight)),
+    };
+    if (shown === heights.length) break;
+  }
+  return plan;
+}
+
+/**
+ * Sizes the window to the accounts. `opening` is the first fit after unlock; later
+ * calls only act while the window still has the size set here.
+ */
+function fitWindow({ opening = false } = {}) {
+  fitting = fitting.then(async () => {
+    try {
+      if (!opening) {
+        if (!autoSize) return;
+        const moved = Math.abs(innerWidth - autoSize.width) > 2 || Math.abs(innerHeight - autoSize.height) > 2;
+        if (moved || await appWindow.isMaximized()) { autoSize = null; return; }
+      }
+      const plan = planWindow();
+      if (autoSize && plan.width === autoSize.width && plan.height === autoSize.height) return;
+
+      const { LogicalSize } = window.__TAURI__.dpi;
+      await appWindow.setMinSize(new LogicalSize(FIT.minSize[0], FIT.minSize[1]));
+      // Wait for the page to see the new size, so the next call doesn't mistake it for
+      // the user's. A resize that didn't take is asked for again, so the window can't
+      // stay at the size of the PIN screen.
+      const applied = () => Math.abs(innerWidth - plan.width) <= 2 && Math.abs(innerHeight - plan.height) <= 2;
+      for (let attempt = 0; attempt < 3 && !applied(); attempt++) {
+        await appWindow.setSize(new LogicalSize(plan.width, plan.height));
+        for (let i = 0; i < 40 && !applied(); i++) {
+          await new Promise(done => setTimeout(done, 25));
+        }
+      }
+      const offScreen = screenX + plan.width > screen.availLeft + screen.availWidth
+        || screenY + plan.height > screen.availTop + screen.availHeight;
+      if (opening || offScreen) await appWindow.center();
+      if (!applied()) {
+        console.warn('The window did not take the size', plan.width, plan.height);
+        return;
+      }
+      autoSize = plan;
+      try { localStorage.setItem('windowSize', JSON.stringify(plan)); } catch {}
+    } catch (err) {
+      console.warn('Could not size the window:', err);
+    }
+  });
+  return fitting;
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
   // Saved stats go on screen straight away, before anything touches the network.
@@ -1107,6 +1563,7 @@ function showToast(message, type = 'info', duration = type === 'error' ? 6000 : 
   const versionCheck = LOW ? null : initDataDragonVersion();
   const versionFromCache = ddVersion;
   await renderAccounts();
+  await fitWindow({ opening: true });
   versionCheck?.then(() => {
     if (ddVersion !== versionFromCache) renderList();
   });

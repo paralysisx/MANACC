@@ -1,6 +1,6 @@
 [package]
 name = "lol-account-manager"
-version = "1.0.15"
+version = "1.0.16"
 edition = "2021"
 rust-version = "1.77"
 
@@ -30,6 +30,8 @@ urlencoding    = "2"
 [target.'cfg(windows)'.dependencies]
 winreg      = "0.52"
 is_elevated = "0.1"
+# Save and open file dialogs, for vault backups
+rfd         = { version = "0.17", default-features = false }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # UI Automation and keyboard input, for typing into the Riot Client sign-in form
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }

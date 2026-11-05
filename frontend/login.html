@@ -8,6 +8,11 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <script>
+    // The chosen theme, before anything is drawn.
+    try { const theme = localStorage.getItem('theme'); if (theme && theme !== 'midnight') document.documentElement.dataset.theme = theme; } catch {}
+    if (window.__VAULTX_LOW__ === true) document.documentElement.dataset.low = '';
+  </script>
 
   <img class="login-mark hidden" id="login-mark" src="mark.svg" alt="">
   <div class="bar" data-tauri-drag-region>
@@ -26,6 +31,15 @@
       <input type="password" id="setup-confirm" placeholder="Repeat PIN" aria-label="Repeat PIN" autocomplete="new-password">
       <button class="btn primary" id="setup-btn">Create vault</button>
       <p class="hint login-note">A forgotten PIN can't be recovered.</p>
+      <button class="btn-link" id="restore-btn">Restore from a backup</button>
+    </div>
+
+    <!-- Restore a backup on a PC with no vault yet -->
+    <div id="restore-section" class="hidden">
+      <p class="hint login-note" id="restore-file"></p>
+      <input type="password" id="restore-password" placeholder="PIN of the backup" aria-label="PIN of the backup" autocomplete="off">
+      <button class="btn primary" id="restore-confirm-btn">Restore</button>
+      <button class="btn-link" id="restore-cancel-btn">Back</button>
     </div>
 
     <!-- Unlock existing vault -->
@@ -111,8 +125,15 @@
       const { LogicalSize } = window.__TAURI__.dpi;
       await appWindow.setResizable(true);
       const low = window.__VAULTX_LOW__ === true;
-      await appWindow.setMinSize(low ? new LogicalSize(640, 300) : new LogicalSize(900, 560));
-      await appWindow.setSize(low ? new LogicalSize(760, 440) : new LogicalSize(1150, 760));
+      await appWindow.setMinSize(low ? new LogicalSize(760, 300) : new LogicalSize(660, 420));
+      // Open at the size that fitted the accounts last time; the main page corrects it.
+      let size = low ? [760, 440] : [1136, 640];
+      try {
+        const saved = JSON.parse(localStorage.getItem('windowSize'));
+        if (saved?.width >= 640 && saved?.height >= 300) size = [saved.width, saved.height];
+      } catch {}
+      await appWindow.setSize(new LogicalSize(size[0], size[1]));
+      await appWindow.center();
       window.location.href = 'index.html';
     }
 
@@ -147,6 +168,41 @@
     });
 
     // ─── Reset Vault ──────────────────────────────────────────────────────────
+    // Restore: pick the file, give its PIN, and it becomes this PC's vault.
+    let restorePath = null;
+    function showRestore(show) {
+      document.getElementById('setup-section').classList.toggle('hidden', show);
+      document.getElementById('restore-section').classList.toggle('hidden', !show);
+      document.getElementById('restore-password').value = '';
+    }
+    document.getElementById('restore-btn').addEventListener('click', async () => {
+      try {
+        const path = await invoke('choose_backup');
+        if (!path) return;
+        restorePath = path;
+        document.getElementById('restore-file').textContent = path.split(/[\\/]/).pop();
+        showRestore(true);
+      } catch (err) {
+        showError(String(err) || 'Could not open the backup.');
+      }
+    });
+    document.getElementById('restore-cancel-btn').addEventListener('click', () => showRestore(false));
+    document.getElementById('restore-confirm-btn').addEventListener('click', async () => {
+      const pw = document.getElementById('restore-password').value;
+      if (!pw) return showError('Enter the PIN of the backup.');
+      setLoading(true);
+      try {
+        await invoke('restore_backup', { path: restorePath, password: pw });
+        await openMain();
+      } catch (err) {
+        setLoading(false);
+        showError(String(err) || 'Could not restore the backup.');
+      }
+    });
+    document.getElementById('restore-password').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('restore-confirm-btn').click();
+    });
+
     function showResetConfirm(show) {
       document.getElementById('reset-confirm-box').classList.toggle('hidden', !show);
       document.getElementById('forgot-pin-btn').classList.toggle('hidden', show);

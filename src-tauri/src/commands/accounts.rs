@@ -13,6 +13,10 @@ pub struct SafeAccount {
     pub riot_id:    String,
     pub region:     String,
     pub stats:      Option<serde_json::Value>,
+    pub tags:       Vec<String>,
+    pub pinned:     bool,
+    #[serde(rename = "rankHistory")]
+    pub rank_history: Vec<storage::RankPoint>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,6 +27,30 @@ pub struct NewAccount {
     #[serde(rename = "riotId")]
     pub riot_id:  String,
     pub region:   String,
+    #[serde(default)]
+    pub tags:     Vec<String>,
+    #[serde(default)]
+    pub pinned:   bool,
+}
+
+const MAX_TAGS: usize = 6;
+const MAX_TAG_LENGTH: usize = 16;
+
+/// Trims tags, drops empty and repeated ones, and keeps them short and few.
+pub fn clean_tags(tags: Vec<String>) -> Vec<String> {
+    let mut clean: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag: String = tag.trim().chars().take(MAX_TAG_LENGTH).collect();
+        let tag = tag.trim().to_string();
+        if tag.is_empty() || clean.iter().any(|kept| kept.eq_ignore_ascii_case(&tag)) {
+            continue;
+        }
+        clean.push(tag);
+        if clean.len() == MAX_TAGS {
+            break;
+        }
+    }
+    clean
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +62,8 @@ pub struct AccountUpdates {
     pub riot_id:  Option<String>,
     pub region:   Option<String>,
     pub stats:    Option<serde_json::Value>,
+    pub tags:     Option<Vec<String>>,
+    pub pinned:   Option<bool>,
 }
 
 fn require_auth(state: &SessionState) -> Result<(), String> {
@@ -55,6 +85,9 @@ pub fn get_all(state: State<'_, Mutex<SessionState>>) -> Result<Vec<SafeAccount>
         riot_id:  a.riot_id.clone(),
         region:   a.region.clone(),
         stats:    a.stats.clone(),
+        tags:     a.tags.clone(),
+        pinned:   a.pinned,
+        rank_history: a.rank_history.clone(),
     }).collect();
     Ok(accounts)
 }
@@ -77,6 +110,9 @@ pub fn add_account(
         region:     account.region,
         stats:      None,
         created_at: crate::scraper::chrono_now_pub(),
+        tags:       clean_tags(account.tags),
+        pinned:     account.pinned,
+        rank_history: Vec::new(),
     };
 
     let key  = s.key.clone().unwrap();
@@ -108,6 +144,8 @@ pub fn update_account(
     if let Some(v) = updates.riot_id  { acc.riot_id   = v; }
     if let Some(v) = updates.region   { acc.region    = v; }
     if let Some(v) = updates.stats    { acc.stats     = Some(v); }
+    if let Some(v) = updates.tags     { acc.tags      = clean_tags(v); }
+    if let Some(v) = updates.pinned   { acc.pinned    = v; }
     // Only update password if a non-empty value is provided
     if let Some(v) = updates.password {
         if !v.is_empty() { acc.password = v; }
@@ -137,4 +175,16 @@ pub fn get_password(id: String, state: State<'_, Mutex<SessionState>>) -> Result
         .find(|a| a.id == id)
         .map(|a| a.password.clone())
         .ok_or_else(|| "Account not found".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clean_tags;
+
+    #[test]
+    fn tags_are_trimmed_deduplicated_and_limited() {
+        let tags = ["  main ", "", "Main", "smurf", "a-very-long-tag-name-here", "3", "4", "5", "6", "7"];
+        let clean = clean_tags(tags.iter().map(|t| t.to_string()).collect());
+        assert_eq!(clean, vec!["main", "smurf", "a-very-long-tag-", "3", "4", "5"]);
+    }
 }
