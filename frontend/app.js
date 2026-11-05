@@ -18,14 +18,12 @@ document.getElementById('tb-close').addEventListener('click', () => appWindow.cl
 // ─── State ────────────────────────────────────────────────────────────────────
 let allAccounts = [];
 let sortedAccounts = [];
-let selectedId = null;
 let activeLobbyData = null;
 let currentSortMode = localStorage.getItem('accountsSortMode') || 'highest';
 
 // ─── DOM Refs ─────────────────────────────────────────────────────────────────
 const appRoot        = document.getElementById('app');
 const accountList    = document.getElementById('account-list');
-const detailEl       = document.getElementById('detail');
 const emptyState     = document.getElementById('empty-state');
 const refreshAllBtn  = document.getElementById('refresh-all-btn');
 const sortSelect     = document.getElementById('sort-select');
@@ -219,109 +217,81 @@ function avatarHTML(account, size) {
   return `<span class="avatar ${size}" style="border-color:${tierColor(account.stats?.solo)}">${initial}${img}</span>`;
 }
 
-function buildSideItem(account) {
-  const solo = account.stats?.solo;
-  const line = isRanked(solo) ? `${tierName(solo)} · ${solo.lp} LP` : 'Unranked';
-  const item = document.createElement('button');
-  item.className = `side-item${account.id === selectedId ? ' selected' : ''}`;
-  item.dataset.select = account.id;
-  item.innerHTML = `${avatarHTML(account, 'small')}
-    <span class="side-text">
-      <span class="name">${esc(account.label)}</span>
-      <span class="sub">${esc(line)}</span>
-    </span>`;
-  return item;
-}
-
-function rankTileHTML(title, rank) {
-  const lp = isRanked(rank) ? `<span class="dim">${esc(rank.lp)} LP</span>` : '';
-  const color = isRanked(rank) ? tierColor(rank) : 'var(--dim)';
-  return `<div class="tile">
-    <span class="hint">${title}</span>
-    <span class="tile-value" style="color:${color}">${esc(tierName(rank))}</span>
-    ${lp}
+function statHTML(title, value, sub, color) {
+  const style = color ? ` style="color:${color}"` : '';
+  return `<div class="stat">
+    <span class="stat-label">${title}</span>
+    <span class="stat-value"${style}>${esc(value)}</span>
+    <span class="stat-sub">${esc(sub)}</span>
   </div>`;
 }
 
-function renderDetail() {
-  if (!detailEl) return;
-  const account = allAccounts.find(a => a.id === selectedId);
-  if (!account) {
-    detailEl.innerHTML = '';
-    return;
-  }
-
-  const id = esc(account.id);
+function buildCard(account) {
   const stats = account.stats;
   const solo = stats?.solo;
+  const flex = stats?.flex;
+  const id = esc(account.id);
   const hasWr = isRanked(solo) && solo.winRate != null;
   const champs = (stats?.topChampions || []).slice(0, 3);
+  const updated = stats?.fetchedAt
+    ? `Updated ${new Date(stats.fetchedAt).toLocaleString()}`
+    : 'No stats yet';
 
-  const champRows = champs.length
+  const champHTML = champs.length
     ? champs.map(c => {
         const wr = c.winRate != null ? Math.round(c.winRate) : null;
-        return `<div class="champ">
+        return `<div class="champ" title="${esc(c.name)}, ${esc(c.games)} games">
           <span class="champ-icon">${esc(c.name.slice(0, 2))}<img src="${esc(champIconUrl(c.name))}" alt=""></span>
-          <div class="champ-body">
-            <div class="champ-line">
-              <span>${esc(c.name)}</span>
-              <span class="dim">${esc(c.games)} games${wr != null ? ` · ${wr}%` : ''}</span>
-            </div>
-            <div class="bar-track"><div class="bar-fill" style="width:${wr ?? 0}%"></div></div>
-          </div>
+          <span class="champ-text">
+            <span class="champ-name">${esc(c.name)}</span>
+            <span class="${wr != null && wr >= 50 ? 'good' : 'bad'}">${wr != null ? `${wr}%` : '-'}</span>
+          </span>
         </div>`;
       }).join('')
-    : '<span class="dim">No stats yet. Refresh to fetch them.</span>';
+    : '<span class="hint">No stats yet. Refresh to fetch them.</span>';
 
-  detailEl.innerHTML = `
-    <div class="hero">
-      ${avatarHTML(account, 'large')}
-      <div class="hero-text">
-        <h1 title="${esc(account.label)}">${esc(account.label)}</h1>
-        <span class="hero-sub">
+  const card = document.createElement('article');
+  card.className = 'card';
+  card.dataset.row = account.id;
+  card.style.setProperty('--stripe', isRanked(solo) ? tierColor(solo) : 'rgba(255, 255, 255, 0.55)');
+  card.innerHTML = `
+    <div class="card-stripes"></div>
+    <div class="card-head">
+      ${avatarHTML(account, 'medium')}
+      <div class="card-id">
+        <span class="card-name" title="${esc(account.label)}">${esc(account.label)}</span>
+        <span class="sub-line">
           <button class="link js-opgg" data-url="${esc(buildOpggUrl(account.riotId, account.region))}" title="Open on op.gg">${esc(account.riotId)}</button>
-          <span>· ${esc(account.region)}</span>
+          <span class="region">${esc(account.region)}</span>
         </span>
       </div>
-      <button class="hero-play js-launch" data-id="${id}">${ICONS.play}Play</button>
+      <button class="play card-play js-launch" data-id="${id}" aria-label="Play ${esc(account.label)}" title="Open Riot Client">${ICONS.play}</button>
     </div>
 
-    <div class="tiles">
-      ${rankTileHTML('Solo / Duo', solo)}
-      <div class="tile">
-        <span class="hint">Win rate</span>
-        <span class="tile-value">${hasWr ? `${esc(Math.round(solo.winRate))}%` : '-'}</span>
-        ${hasWr ? `<span class="dim">${esc(solo.wins)}W ${esc(solo.losses)}L</span>` : ''}
-      </div>
-      ${rankTileHTML('Flex', stats?.flex)}
+    <div class="card-stats" title="${esc(updated)}">
+      ${statHTML('Solo / Duo', tierName(solo), isRanked(solo) ? `${solo.lp} LP` : '', isRanked(solo) ? tierColor(solo) : 'var(--dim)')}
+      ${statHTML('Win rate', hasWr ? `${Math.round(solo.winRate)}%` : '-', hasWr ? `${solo.wins}W ${solo.losses}L` : '')}
+      ${statHTML('Flex', tierName(flex), isRanked(flex) ? `${flex.lp} LP` : '', isRanked(flex) ? tierColor(flex) : 'var(--dim)')}
     </div>
 
-    <div class="panels">
-      <section class="panel">
-        <h2>Top champions</h2>
-        ${champRows}
-      </section>
-      <section class="panel">
-        <h2>Login</h2>
-        <div class="cred"><span>${esc(account.username)}</span><button class="js-copy-user" data-id="${id}">Copy</button></div>
-        <div class="cred"><span class="mask">••••••••</span><button class="js-copy-pw" data-id="${id}">Copy</button></div>
-        <div class="panel-actions">
-          <button class="btn js-refresh" data-id="${id}">Refresh</button>
-          <button class="btn js-edit" data-id="${id}">Edit</button>
-        </div>
-      </section>
+    <div class="card-champs">${champHTML}</div>
+
+    <div class="card-foot">
+      <button class="card-action js-copy-user" data-id="${id}" title="Copy username">${ICONS.user}<span>Username</span></button>
+      <button class="card-action js-copy-pw" data-id="${id}" title="Copy password">${ICONS.key}<span>Password</span></button>
+      <span class="toolbar-spacer"></span>
+      <button class="icon-btn js-refresh" data-id="${id}" aria-label="Refresh stats" title="Refresh stats">${ICONS.refresh}</button>
+      <button class="icon-btn js-edit" data-id="${id}" aria-label="Edit or delete" title="Edit or delete">${ICONS.edit}</button>
     </div>`;
+  return card;
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
+const buildAccount = LOW ? buildRow : buildCard;
+
 function renderList() {
-  if (!LOW && !allAccounts.some(a => a.id === selectedId)) {
-    selectedId = sortedAccounts[0]?.id ?? null;
-  }
-  accountList.replaceChildren(...sortedAccounts.map(LOW ? buildRow : buildSideItem));
+  accountList.replaceChildren(...sortedAccounts.map(buildAccount));
   emptyState.classList.toggle('hidden', allAccounts.length > 0);
-  detailEl?.classList.toggle('hidden', allAccounts.length === 0);
-  renderDetail();
 }
 
 function sortAccounts() {
@@ -355,16 +325,6 @@ appRoot.addEventListener('error', (e) => {
 }, true);
 
 appRoot.addEventListener('click', async (e) => {
-  const sideItem = e.target.closest('[data-select]');
-  if (sideItem) {
-    selectedId = sideItem.dataset.select;
-    accountList.querySelectorAll('.side-item').forEach(n => {
-      n.classList.toggle('selected', n === sideItem);
-    });
-    renderDetail();
-    return;
-  }
-
   const profileBtn = e.target.closest('.js-opgg');
   if (profileBtn) {
     invoke('open_external', { url: profileBtn.dataset.url }).catch(() => {});
@@ -402,7 +362,7 @@ appRoot.addEventListener('click', async (e) => {
 
 function showCopied(btn) {
   const original = btn.innerHTML;
-  btn.innerHTML = LOW ? ICONS.check : 'Copied';
+  btn.innerHTML = LOW ? ICONS.check : `${ICONS.check}<span>Copied</span>`;
   btn.classList.add('copied');
   setTimeout(() => {
     btn.innerHTML = original;
@@ -425,32 +385,19 @@ async function handleLaunchAccount(id, btn) {
 }
 
 async function handleRefreshAccount(id) {
-  const row = LOW ? accountList.querySelector(`.row[data-row="${id}"]`) : null;
-  const btn = (row || detailEl).querySelector('.js-refresh');
-  if (btn) {
-    btn.disabled = true;
-    if (LOW) btn.classList.add('busy');
-    else btn.textContent = 'Refreshing...';
-  }
+  const row = accountList.querySelector(`[data-row="${id}"]`);
+  const btn = row?.querySelector('.js-refresh');
+  if (btn) { btn.disabled = true; btn.classList.add('busy'); }
 
   try {
     const stats = await invoke('refresh_stats', { id });
     const acc = allAccounts.find(a => a.id === id);
     if (acc) {
       acc.stats = stats;
-      if (LOW) {
-        row?.replaceWith(buildRow(acc));
-      } else {
-        sortAccounts();
-        renderList();
-      }
+      row?.replaceWith(buildAccount(acc));
     }
   } catch (err) {
-    if (btn) {
-      btn.disabled = false;
-      if (LOW) btn.classList.remove('busy');
-      else btn.textContent = 'Refresh';
-    }
+    if (btn) { btn.disabled = false; btn.classList.remove('busy'); }
     showToast(String(err) || 'Failed to fetch stats', 'error');
   }
 }
@@ -491,6 +438,10 @@ document.getElementById('lobby-open-tracker-btn').addEventListener('click', () =
 document.getElementById('lobby-viewer-btn').addEventListener('click', async () => {
   lobbyModal.classList.remove('hidden');
   await fetchLobby();
+});
+
+lobbyModal.addEventListener('click', (e) => {
+  if (e.target === lobbyModal) closeLobbyViewer();
 });
 
 function closeLobbyViewer() {
@@ -549,15 +500,19 @@ async function openLobbyMultiSite(site) {
 // ─── Auto accept ──────────────────────────────────────────────────────────────
 const autoAcceptBtn = document.getElementById('auto-accept-header-btn');
 
+function showAutoAccept(enabled) {
+  autoAcceptBtn.classList.toggle('on', enabled);
+  if (!LOW) autoAcceptBtn.setAttribute('aria-checked', String(enabled));
+}
+
 invoke('get_auto_accept_status')
-  .then(enabled => autoAcceptBtn.classList.toggle('on', enabled))
+  .then(showAutoAccept)
   .catch(() => {});
 
 autoAcceptBtn.addEventListener('click', async () => {
   const next = !autoAcceptBtn.classList.contains('on');
   try {
-    const enabled = await invoke('set_auto_accept_enabled', { enabled: next });
-    autoAcceptBtn.classList.toggle('on', enabled);
+    showAutoAccept(await invoke('set_auto_accept_enabled', { enabled: next }));
   } catch (err) {
     showToast(String(err) || 'Failed to update auto-accept.', 'error');
   }
@@ -575,7 +530,8 @@ sortSelect.addEventListener('change', async () => {
 refreshAllBtn.addEventListener('click', async () => {
   if (allAccounts.length === 0) return;
   refreshAllBtn.disabled = true;
-  refreshAllBtn.textContent = 'Refreshing...';
+  if (LOW) refreshAllBtn.textContent = 'Refreshing...';
+  else refreshAllBtn.classList.add('busy');
 
   try {
     const results = await invoke('refresh_all');
@@ -589,7 +545,8 @@ refreshAllBtn.addEventListener('click', async () => {
     showToast(String(err) || 'Refresh failed', 'error');
   } finally {
     refreshAllBtn.disabled = false;
-    refreshAllBtn.textContent = 'Refresh all';
+    if (LOW) refreshAllBtn.textContent = 'Refresh all';
+    else refreshAllBtn.classList.remove('busy');
   }
 });
 
@@ -671,7 +628,6 @@ async function handleModalSave() {
     } else {
       const newId = await invoke('add_account', { account: { label, username, password, riotId, region } });
       closeModal();
-      selectedId = newId;
       await renderAccounts();
       handleRefreshAccount(newId);
     }

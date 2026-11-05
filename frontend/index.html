@@ -13,39 +13,40 @@
 
 <!-- Normal mode: sidebar + detail -->
 <template id="normal-shell">
-  <div class="shell">
-    <aside class="side">
-      <div class="side-brand" data-tauri-drag-region>
-        <img src="icon.svg" alt="">
-        <span class="bar-title" data-tauri-drag-region>VaultX</span>
-      </div>
-      <div class="side-controls">
-        <select id="sort-select" title="Sort accounts">
-          <option value="highest">Highest rank</option>
-          <option value="lowest">Lowest rank</option>
-          <option value="region">Region</option>
-        </select>
-        <button class="add-btn" id="add-account-btn" aria-label="Add account" title="Add account"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-      </div>
-      <div class="side-list" id="account-list"></div>
-      <div class="side-actions">
-        <button class="btn ghost toggle" id="auto-accept-header-btn" title="Automatically accept the match-found screen">Auto-accept</button>
-        <button class="btn ghost" id="lobby-viewer-btn">Lobby</button>
-        <button class="btn ghost" id="refresh-all-btn">Refresh all</button>
-        <button class="btn ghost" id="settings-btn">Settings</button>
-      </div>
-    </aside>
-    <main class="detail-pane">
-      <div class="win-row">
-        <div class="drag" data-tauri-drag-region></div>
-        <button class="icon-btn" id="lock-btn" aria-label="Lock vault" title="Lock vault"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
-        <button class="win" id="tb-minimize" aria-label="Minimize" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5h10"/></svg></button>
-        <button class="win" id="tb-maximize" aria-label="Maximize" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
-        <button class="win close" id="tb-close" aria-label="Close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
-      </div>
-      <div class="detail" id="detail"></div>
-      <div class="empty hidden" id="empty-state"><strong>No accounts yet</strong><span>Add your first one to get started.</span></div>
-    </main>
+  <div class="win-row" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <img src="icon.svg" alt="">
+      <span class="bar-title" data-tauri-drag-region>VaultX</span>
+    </div>
+    <div class="drag" data-tauri-drag-region></div>
+    <button class="switch" id="auto-accept-header-btn" role="switch" aria-checked="false" title="Automatically accept the match-found screen">
+      <span class="switch-track"><span class="switch-knob"></span></span>
+      Auto-accept
+    </button>
+    <button class="top-btn" id="lobby-viewer-btn" title="See who's in your lobby"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.600 2.900-6 6.500-6s6.500 2.400 6.500 6"/><path d="M16 4.800a3.500 3.500 0 0 1 0 6.400M18 14.400c2.100.8 3.500 2.800 3.500 5.600"/></svg>Lobby</button>
+    <span class="top-divider"></span>
+    <button class="icon-btn" id="refresh-all-btn" aria-label="Refresh all accounts" title="Refresh all accounts"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.300-4.300L3 9.500M3 4v5.500h5.500M4 13a8 8 0 0 0 14.300 4.300L21 14.500M21 20v-5.500h-5.500"/></svg></button>
+    <button class="icon-btn" id="settings-btn" aria-label="Settings" title="Settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+    <button class="icon-btn" id="lock-btn" aria-label="Lock vault" title="Lock vault"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
+    <span class="top-divider"></span>
+    <button class="win" id="tb-minimize" aria-label="Minimize" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M0 5h10"/></svg></button>
+    <button class="win" id="tb-maximize" aria-label="Maximize" title="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
+    <button class="win close" id="tb-close" aria-label="Close" title="Close"><svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
+  </div>
+  <div class="toolbar">
+    <h1>Accounts</h1>
+    <span class="count" id="account-count"></span>
+    <select id="sort-select" title="Sort accounts">
+      <option value="highest">Highest rank</option>
+      <option value="lowest">Lowest rank</option>
+      <option value="region">Region</option>
+    </select>
+    <div class="toolbar-spacer"></div>
+    <button class="btn primary" id="add-account-btn">Add account</button>
+  </div>
+  <div class="cards-scroll">
+    <div class="cards" id="account-list"></div>
+    <div class="empty hidden" id="empty-state"><strong>No accounts yet</strong><span>Add your first one to get started.</span></div>
   </div>
 </template>
 
