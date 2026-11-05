@@ -118,9 +118,9 @@ function buildUggUrl(riotId, region) {
 
 /** The op.gg and u.gg buttons for an account. They open in the browser. */
 function profileLinksHTML(account) {
-  const site = (name, url) =>
-    `<button class="site js-profile" data-url="${esc(url)}" title="Open on ${name}">${name}</button>`;
-  return `<span class="sites">${site('op.gg', buildOpggUrl(account.riotId, account.region))}${site('u.gg', buildUggUrl(account.riotId, account.region))}</span>`;
+  const site = (name, icon, url) =>
+    `<button class="site ${icon} js-profile" data-url="${esc(url)}" title="Open on ${name}" aria-label="Open on ${name}"><img src="assets/${icon}.png" alt="" draggable="false"></button>`;
+  return `<span class="sites">${site('op.gg', 'opgg', buildOpggUrl(account.riotId, account.region))}${site('u.gg', 'ugg', buildUggUrl(account.riotId, account.region))}</span>`;
 }
 
 function lobbyRiotIds(players) {
@@ -846,12 +846,21 @@ function setQueueFields(setting) {
   syncQueueFields();
 }
 
+/** The first "Account#N" no account uses yet. */
+function nextAccountLabel() {
+  const used = new Set(allAccounts.map(a => a.label.trim().toLowerCase()));
+  let n = 1;
+  while (used.has(`account#${n}`)) n++;
+  return `Account#${n}`;
+}
+
 function openAddModal() {
   modalTitle.textContent = 'Add account';
   editIdInput.value = '';
   clearModalFields();
   modalDeleteBtn.classList.add('hidden');
   document.getElementById('field-password').placeholder = '';
+  document.getElementById('field-label').placeholder = nextAccountLabel();
   accountModal.classList.remove('hidden');
   document.getElementById('field-label').focus();
 }
@@ -864,6 +873,7 @@ function openEditModal(id) {
   clearModalFields();
   editIdInput.value = id;
   document.getElementById('field-label').value    = acc.label;
+  document.getElementById('field-label').placeholder = acc.label;
   document.getElementById('field-username').value = acc.username;
   document.getElementById('field-riotid').value   = acc.riotId;
   document.getElementById('field-region').value   = acc.region;
@@ -896,13 +906,15 @@ function showModalError(msg) {
 
 async function handleModalSave() {
   const id       = editIdInput.value;
-  const label    = document.getElementById('field-label').value.trim();
+  // A blank label is filled in: the next "Account#N" when adding, the current one when editing.
+  const label    = document.getElementById('field-label').value.trim()
+    || allAccounts.find(a => a.id === id)?.label
+    || nextAccountLabel();
   const username = document.getElementById('field-username').value.trim();
   const password = document.getElementById('field-password').value;
   const riotId   = document.getElementById('field-riotid').value.trim();
   const region   = document.getElementById('field-region').value;
 
-  if (!label)    return showModalError('Label is required.');
   if (!username) return showModalError('Username is required.');
   if (!riotId)   return showModalError('Riot ID is required.');
   if (!/^.+#.+$/.test(riotId)) return showModalError('Riot ID must look like GameName#TAG.');

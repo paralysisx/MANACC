@@ -166,8 +166,6 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 }
 .card-head .link, .card-head .region, .card-head .stat-sub, .highlight .stat-label, .highlight-sub { color: #c8c8cc; }
 .card-head .link:hover { color: var(--ink); }
-.card-head .site { color: #c8c8cc; border-color: rgba(255, 255, 255, 0.22); background: rgba(0, 0, 0, 0.35); }
-.card-head .site:hover { color: var(--ink); border-color: rgba(255, 255, 255, 0.5); background: rgba(0, 0, 0, 0.55); }
 
 /* The X, huge and faded behind the PIN form. Static: painted once. */
 .login-mark {
@@ -388,16 +386,19 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .region { flex: none; color: var(--faint); font-size: 12px; }
 
 /* op.gg / u.gg buttons */
-.sites { display: flex; flex: none; gap: 4px; }
+.sites { display: flex; flex: none; gap: 5px; }
 .site {
-  padding: 0 5px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--dim);
-  font-size: 11px;
-  line-height: 16px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  opacity: 0.85;
 }
-.site:hover { color: var(--ink); border-color: var(--line-strong); background: var(--hover); }
+.site img { display: block; width: 100%; height: 100%; pointer-events: none; }
+/* u.gg's mark is dark on transparent, so it sits on a light tile. */
+.site.ugg { padding: 2px; background: #f2f3f5; }
+.site:hover { opacity: 1; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55); }
 .meta-line { align-items: center; margin-top: 3px; }
 
 .rank { display: flex; align-items: center; gap: 7px; }
