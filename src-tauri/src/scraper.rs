@@ -25,7 +25,7 @@ fn region_slug(region: &str) -> Option<&'static str> {
     }
 }
 
-fn parse_riot_id(riot_id: &str) -> Result<(&str, &str), String> {
+pub fn parse_riot_id(riot_id: &str) -> Result<(&str, &str), String> {
     let hash_idx = riot_id.rfind('#')
         .ok_or("Riot ID must be in \"Name#TAG\" format.")?;
     let game_name = &riot_id[..hash_idx];
@@ -50,7 +50,7 @@ pub struct RankInfo {
 }
 
 impl RankInfo {
-    fn unranked() -> Self {
+    pub fn unranked() -> Self {
         RankInfo {
             tier:     "UNRANKED".to_string(),
             division: String::new(),
